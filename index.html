@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<!-- home-screen web app: full screen, own icon (icons/ are drawn by make_icons.py) -->
+<meta name="apple-mobile-web-app-title" content="Skybreak">
+<!-- "black", not "black-translucent": with a see-through status bar iOS sometimes left the page a status bar short
+     (a strip at the bottom that the game could not cover, reported after tapping Flip) -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#0b1118">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="icons/favicon-64.png">
+<title>Skybreak Protocol</title>
+<style>
+  :root{
+    --ink:#e8f4ff; --dim:#8fa8bd; --accent:#66ffcc; --warn:#ff6a5a; --gold:#ffd84d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:#0b1118;
+    font-family:-apple-system,"PingFang SC","Helvetica Neue",system-ui,sans-serif;color:var(--ink)}
+  canvas#gl{display:block;width:100%;height:100%}
+  /* everything the player sees lives in #app. On a phone locked in portrait, js/view.js turns it 90 degrees so the
+     game still plays sideways; sizes inside use cqw/cqh (percent of #app) instead of vw/vh for the same reason */
+  #app{position:fixed;left:0;top:0;width:100vw;height:100vh;transform-origin:0 0;container-type:size;overflow:hidden}
+  /* phones: no double-tap zoom, no text selection or callouts while playing */
+  /* phones: no blur behind the panels (blurring what is behind every frame made scrolling slow) */
+  body.touch .hgPanel,body.touch #panel{backdrop-filter:none;background:rgba(8,16,24,.86)}
+  html,body{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  button,select,input{touch-action:manipulation}
+  /* panels that scroll may still be dragged (never zoomed) */
+  #hgPalette,#hgStats,.hgModal,#hgRunsBox,#hgRunsView,#hgBoardView,#hgRunsText{touch-action:pan-y} #hgTop{touch-action:pan-x}
+  /* drawn turned: the game scrolls these by hand (view.js installTurnedScroll), the browser's own scrolling would go sideways */
+  #app.turned #hgPalette,#app.turned #hgStats,#app.turned .hgModal,#app.turned #hgRunsBox,#app.turned #hgRunsView,#app.turned #hgBoardView,
+  #app.turned #hgRunsText,#app.turned #hgTop,#app.turned #coopRooms,#app.turned #hgTip,#app.turned #over{touch-action:none}
+  input,textarea{-webkit-user-select:text;user-select:text}
+
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;inset:0;pointer-events:none;user-select:none}
+
+  /* crosshair */
+  #cross{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:26px;height:26px;opacity:.85}
+  #cross:before,#cross:after{content:"";position:absolute;background:var(--accent)}
+  #cross:before{left:50%;top:0;width:2px;height:9px;transform:translateX(-50%)}
+  #cross:after{left:50%;bottom:0;width:2px;height:9px;transform:translateX(-50%)}
+  #crossH{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:26px;height:2px}
+  #crossH:before,#crossH:after{content:"";position:absolute;top:0;width:9px;height:2px;background:var(--accent)}
+  #crossH:before{left:0} #crossH:after{right:0}
+
+  /* lead indicator: shoot here */
+  /* versus: a missile homing on you. Small on purpose (a tag under the crosshair, an arrow on a ring around it toward
+     the missile, a red dot on the radar): you see it without looking away, and it does not cover the fight. */
+  #mslWarn{position:absolute;display:none;left:50%;top:calc(50% + 118px);transform:translateX(-50%);padding:3px 10px;
+    border:1.5px solid #ff4d4d;border-radius:6px;color:#ff6b6b;font-weight:800;font-size:14px;letter-spacing:.18em;
+    background:rgba(40,0,0,.45);white-space:nowrap;pointer-events:none}
+  #mslWarn small{font-weight:600;letter-spacing:.06em;color:#ffb3b3;margin-left:8px;font-variant-numeric:tabular-nums}
+  #mslArrow{position:absolute;display:none;width:0;height:0;margin:-11px 0 0 -14px;border-left:14px solid transparent;
+    border-right:14px solid transparent;border-top:22px solid #ff4d4d;filter:drop-shadow(0 0 6px rgba(255,60,60,.8));pointer-events:none}
+  #lead{position:absolute;display:none;width:34px;height:34px;margin:-17px 0 0 -17px;
+    border:2px solid var(--gold);border-radius:50%;
+    box-shadow:0 0 12px rgba(255,216,77,.55)}
+  #lead:after{content:"";position:absolute;inset:11px;border-radius:50%;background:var(--gold);opacity:.8}
+
+  /* enemy markers / off-screen arrows */
+  .marker{position:absolute;width:26px;height:26px;margin:0;border:2px solid var(--warn);
+    border-radius:4px;opacity:.75}
+  .marker.boss{border-color:#ff6ad5;width:40px;height:40px;border-width:3px}
+  .marker.drone{border-color:#ff3b3b;width:18px;height:18px;border-radius:50%}
+  .marker.bomber{border-color:#ffb35a;width:36px;height:36px}
+  .marker.ace{border-color:#f5f5f5;border-style:dashed}
+  .marker.carrier{border-color:#66ccff;border-radius:50%}
+  .marker.player{border-color:#ff9f43;width:30px;height:30px;border-radius:6px}
+  .marker.diving{border-width:3px;animation:blink .3s steps(2) infinite}
+  @keyframes blink{50%{opacity:.15}}
+  .marker.locked{border-color:var(--gold);box-shadow:0 0 10px rgba(255,216,77,.6);opacity:1}
+  .marker.edge{border-radius:50%;border-width:0;width:0;height:0;
+    border-left:13px solid var(--warn);border-top:8px solid transparent;border-bottom:8px solid transparent;
+    box-shadow:none}
+  .marker.edge.boss{border-left-color:#ff6ad5;border-left-width:17px}
+  .marker.edge.drone{border-left-color:#ff3b3b} .marker.edge.bomber{border-left-color:#ffb35a}
+  .marker.edge.ace{border-left-color:#f5f5f5} .marker.edge.carrier{border-left-color:#66ccff}
+  .marker.edge.locked{border-left-color:var(--gold)}
+  /* training panel (top center during the first-flight tutorial) */
+  #tutBox{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);width:min(560px,62cqw);display:none;
+    padding:12px 16px 14px;border-radius:12px;background:rgba(8,14,22,.82);border:1px solid rgba(102,255,204,.35);
+    color:var(--ink);font-size:14.5px;line-height:1.5;box-shadow:0 8px 30px rgba(0,0,0,.35)}
+  #tutStep{font-size:11px;letter-spacing:.18em;color:var(--accent);font-weight:700;margin-bottom:4px}
+  #tutStep span{float:right;color:var(--dim);letter-spacing:.05em;font-weight:600}
+  #tutBar{height:5px;border-radius:3px;background:rgba(255,255,255,.12);margin-top:9px;overflow:hidden}
+  #tutFill{height:100%;width:0;background:var(--accent);transition:width .12s}
+  /* one-time hangar tips */
+  #hgTip{position:absolute;left:50%;top:112px;transform:translateX(-50%);width:min(460px,60cqw);display:none;z-index:6;
+    pointer-events:auto;padding:12px 16px;border-radius:12px;background:rgba(10,18,28,.95);
+    border:1px solid rgba(102,255,204,.45);font-size:13.5px;line-height:1.55;box-shadow:0 10px 30px rgba(0,0,0,.45)}
+  #hgTipCount{font-size:11px;letter-spacing:.15em;color:var(--accent);font-weight:700;margin-bottom:4px}
+  .hgTipBtns{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+  /* ---------- touch (phones and tablets) ---------- */
+  .touchOnly{display:none} body.touch .touchOnly{display:inline-block} body.touch .keysOnly{display:none}
+  #touchUI{display:none;position:absolute;inset:0;pointer-events:none}
+  #tStick{position:absolute;left:calc(24px + var(--safe-left,0px));bottom:24px;width:150px;height:150px;border-radius:50%;
+    background:rgba(255,255,255,.07);border:2px solid rgba(255,255,255,.25);pointer-events:auto;touch-action:none}
+  #tKnob{position:absolute;left:50%;top:50%;width:62px;height:62px;margin:-31px 0 0 -31px;border-radius:50%;
+    background:rgba(102,255,204,.45);border:2px solid rgba(102,255,204,.9);pointer-events:none}
+  .tBtn{position:absolute;pointer-events:auto;touch-action:none;border-radius:50%;border:2px solid rgba(255,255,255,.35);
+    background:rgba(8,14,22,.45);color:#fff;font:800 14px system-ui,sans-serif;user-select:none;-webkit-user-select:none;padding:0}
+  .tBtn.down{background:rgba(102,255,204,.45);border-color:var(--accent)}
+  #tFire{right:calc(26px + var(--safe-right,0px));bottom:30px;width:100px;height:100px;border-color:rgba(255,106,90,.85);font-size:16px}
+  #tMissile{right:calc(138px + var(--safe-right,0px));bottom:22px;width:74px;height:74px}
+  #tThrUp{right:calc(44px + var(--safe-right,0px));bottom:144px;width:64px;height:64px}
+  #tThrDown{right:calc(144px + var(--safe-right,0px));bottom:108px;width:58px;height:58px}
+  /* two-line buttons: a symbol or word, and a small caption (the missile button shows how many are left) */
+  .tBtn span{display:block;line-height:1.05} .tBtn small{display:block;font-size:9.5px;font-weight:700;letter-spacing:.04em;opacity:.85;margin-top:2px}
+  #tMissile span{font-size:11px} #tMissile small{font-size:15px;opacity:1;color:var(--gold)}
+  #tThrUp span,#tThrDown span{font-size:18px}
+  #tTop{position:absolute;left:50%;top:8px;transform:translateX(-50%);display:flex;gap:6px;pointer-events:auto}
+  /* tilt mode: the stick is hidden, so its corner holds the tilt settings */
+  #tTiltBox{position:absolute;left:calc(20px + var(--safe-left,0px));bottom:26px;display:none;flex-direction:column;gap:8px;pointer-events:auto}
+  #tTiltBox .tPill{font-size:13px;padding:10px 14px}
+  .tPill{font:700 12px system-ui,sans-serif;padding:7px 12px;border-radius:99px;border:1px solid rgba(102,255,204,.45);
+    background:rgba(8,14,22,.7);color:var(--accent);touch-action:manipulation}
+  #tExit{display:none}
+  #tutSkip{pointer-events:auto}   /* the HUD ignores the mouse/finger; this one button must not */
+  body.touch #help{display:none}
+  body.touch #panel{left:calc(10px + var(--safe-left,0px));top:8px;bottom:auto;width:170px;padding:8px 10px;font-size:11px}
+  body.touch #panel .row{padding:1px 0}
+  /* phone: score and radar share the top right corner side by side, clear of the throttle buttons */
+  body.touch #radarWrap{right:calc(112px + var(--safe-right,0px));bottom:auto;top:8px;transform:scale(.55);transform-origin:top right}
+  /* on a phone the status panel keeps only what matters in a fight */
+  body.touch #panel .row:has(#planeName), body.touch #panel .row:has(#mapName), body.touch #panel .row:has(#spd),
+  body.touch #panel .row:has(#alt), body.touch #panel .row:has(#bank){display:none}
+  /* big messages go to the bottom middle, between the stick and the buttons, instead of over the training panel */
+  body.touch #msg{top:auto;bottom:16px;font-size:19px;white-space:normal;max-width:min(420px,52cqw)}
+  body.touch #msg .sub{font-size:12.5px}
+  body.touch #top{top:8px;right:calc(10px + var(--safe-right,0px));width:94px;padding:6px 10px}
+  body.touch #top .big{font-size:20px}
+  body.touch #testTag{top:48px}
+  /* versus: scoreboard at the top, final table on the death panel */
+  #vsBoard{position:absolute;left:50%;top:50px;transform:translateX(-50%);display:none;min-width:200px;padding:6px 10px;
+    border-radius:10px;background:rgba(8,14,22,.62);border:1px solid rgba(255,159,67,.45);font-size:12.5px}
+  .vsTime{font-size:11px;letter-spacing:.1em;color:var(--dim);text-align:center;margin-bottom:3px;font-weight:700}
+  .vsRow{display:flex;gap:8px;align-items:center;padding:1px 0} .vsRow span{width:12px;color:var(--dim)}
+  .vsRow b{margin-left:auto;color:var(--gold);font-variant-numeric:tabular-nums} .vsRow i{font-style:normal;color:var(--dim);width:18px;text-align:right}
+  .vsRow.me{color:#fff;font-weight:700}
+  .vsFeed{margin-top:4px;font-size:11.5px;color:#ffb35a;text-align:center}
+  body.vs #top{display:none}
+  /* (on a computer the board sits where the score box was, clear of the controls help in the top left) */
+  body:not(.touch) #vsBoard{left:auto;right:12px;top:12px;transform:none}
+  body.touch #vsBoard{top:46px;font-size:11px;min-width:170px;padding:4px 8px}
+  #vsPause{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);display:none;text-align:center;padding:14px 22px;
+    border-radius:12px;background:rgba(8,14,22,.85);border:1px solid rgba(255,216,77,.6);font-size:14px;line-height:1.6}
+  #vsPause b{display:block;font-size:24px;letter-spacing:.2em;color:var(--gold)}
+  #pauseBox{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(5,9,14,.62);pointer-events:auto;z-index:8}
+  #pauseMenu{text-align:center;padding:18px 26px;border-radius:14px;background:rgba(10,18,28,.95);border:1px solid rgba(102,255,204,.45);
+    min-width:min(420px,86cqw)}
+  #pauseTitle{font-size:28px;font-weight:800;letter-spacing:.25em;color:var(--accent)}
+  #pauseInfo{font-size:13.5px;color:var(--dim);margin:6px 0 14px}
+  .pbBtns{display:flex;flex-direction:column;gap:8px;align-items:stretch}
+  .pbBtns .hgBtn{font-size:15px;padding:11px 18px}
+  .pbBtns .hgBtn.armed{background:rgba(255,106,90,.25);border-color:var(--warn);color:#fff}
+  #pauseNote{font-size:12px;color:var(--dim);margin-top:10px;max-width:380px;line-height:1.5}
+  #pauseCount{font-size:96px;font-weight:800;color:var(--gold);text-shadow:0 0 30px rgba(0,0,0,.6)}
+  body.touch #pauseMenu{padding:12px 18px} body.touch .pbBtns .hgBtn{padding:9px 14px}
+  #vsResult{display:none;margin:8px 0}
+  #over.vs #vsResult{display:block} #over.vs .st,#over.vs #diag{display:none}
+  .vsTable{border-collapse:collapse;font-size:15px;margin:0 auto} .vsTable th{font-size:11px;letter-spacing:.1em;color:var(--dim);padding:3px 12px}
+  .vsTable td{padding:4px 12px;text-align:center} .vsTable tr.me td{color:var(--gold);font-weight:800}
+  #vsWait{margin-top:6px;font-size:13px;color:var(--dim);text-align:center}
+  #vsElo{margin-top:8px;font-size:14px;color:var(--accent);text-align:center}
+  .mateTag.foe{color:#ffb35a}
+  .vsLeft{font-size:10px;color:var(--warn);border:1px solid var(--warn);border-radius:4px;padding:0 4px;margin-left:4px}
+  .shNote{font-size:12.5px;color:var(--dim);line-height:1.5;margin:4px 0 8px}
+  #hgShareCode{font:800 28px/1 ui-monospace,Menlo,monospace;letter-spacing:.25em;color:var(--gold);margin-right:auto}
+  #hgShareText{width:100%;height:44px;margin-top:8px;box-sizing:border-box;resize:none;font:12px/1.4 ui-monospace,Menlo,monospace;color:var(--ink);
+    background:rgba(255,255,255,.05);border:1px solid rgba(120,200,230,.25);border-radius:8px;padding:8px;word-break:break-all}
+  .shRow{display:flex;gap:8px;align-items:center;margin-top:6px}
+  #hgShareIn{flex:1;font:12.5px ui-monospace,Menlo,monospace;padding:7px 9px;border-radius:8px;background:rgba(255,255,255,.07);
+    color:var(--ink);border:1px solid rgba(120,200,230,.3)}
+  #hgShareMsg{font-size:12.5px;margin-top:8px;min-height:16px;color:var(--accent)} #hgShareMsg.bad{color:var(--warn)}
+  .coopQuick{width:100%;padding:12px;font-size:15px;text-align:left;line-height:1.35}
+  .coopQuick small{display:block;font-size:11.5px;color:var(--dim);font-weight:400}
+  #coopOnline{font-size:12px;color:var(--accent);margin:6px 0 2px;min-height:15px}
+  .coopPub{font-size:12px;color:var(--dim);margin-left:auto;display:flex;align-items:center;gap:4px}
+  #coopRooms{max-height:150px;overflow-y:auto;touch-action:pan-y}
+  .coopRm{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:6px;background:rgba(255,255,255,.04);margin:3px 0;font-size:13px}
+  .coopRm b{color:var(--ink)} .coopRm span{color:var(--dim);font-size:12px} .coopRm .hgBtn{margin-left:auto;padding:4px 12px}
+  .coopRm i{font-style:normal;font-size:10px;color:var(--gold);border:1px solid rgba(255,216,77,.5);border-radius:4px;padding:0 4px}
+  .coopNone{font-size:12.5px;color:var(--dim);padding:4px 2px}
+  #coopSearch{text-align:center;padding:14px 0 4px}
+  #coopSearchText{font-size:14px;line-height:1.6;margin-top:10px}
+  .coopRadar{width:64px;height:64px;margin:0 auto;border-radius:50%;border:2px solid rgba(102,255,204,.5);position:relative;overflow:hidden}
+  .coopRadar:after{content:'';position:absolute;left:50%;top:50%;width:50%;height:2px;background:var(--accent);transform-origin:0 50%;animation:sweep 1.6s linear infinite}
+  @keyframes sweep{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+  .coopModes{display:flex;gap:8px} .coopModes .hgBtn{flex:1;padding:10px;text-align:left;line-height:1.35}
+  .coopModes .hgBtn small{display:block;font-size:11px;color:var(--dim);font-weight:400}
+  #coopMode{font-size:12.5px;color:var(--gold);margin:6px 0}
+  #coopDown{position:absolute;left:50%;top:22%;transform:translateX(-50%);display:none;text-align:center;
+    padding:12px 18px;border-radius:12px;background:rgba(8,14,22,.78);border:1px solid rgba(255,106,90,.55);
+    width:min(460px,80cqw);box-shadow:0 8px 26px rgba(0,0,0,.4)}
+  #coopDown .cdT{font-size:20px;font-weight:800;letter-spacing:.14em;color:var(--warn)}
+  #coopDownSub{font-size:13px;line-height:1.5;color:var(--ink);margin-top:4px}
+  #coopDown .cdRow{display:flex;gap:10px;align-items:center;justify-content:center;margin-top:9px;font-size:12.5px;color:var(--dim)}
+  #coopDownLeave{pointer-events:auto}
+  body.touch #coopDown{top:48px;padding:8px 12px} body.touch #coopDown .cdT{font-size:16px}
+  body.touch #tutBox{top:48px;bottom:auto;width:min(520px,56cqw);font-size:13px;padding:8px 12px}
+  body.touch #pullup{top:62%}
+  /* death panel buttons (clickable everywhere, the only way on a phone) */
+  .overBtns{display:flex;gap:8px;margin-top:12px}
+  .overBtns .hgBtn{font-size:14px;padding:9px 16px}
+
+  /* ---------- small screens (phones sideways): compact hangar and death panel ---------- */
+  @media (max-height: 520px), (max-width: 820px) {
+    body #hgTop{left:8px;right:8px;top:6px;transform:none;overflow-x:auto;padding:5px 8px;gap:5px}
+    body #hgTop .hgTitle{display:none}
+    body #hgTop .hgBtn,body #hgTop .hgSel,body #hgRandom{font-size:11.5px;padding:5px 8px}
+    body #hgPalette{top:52px;left:8px;width:176px;padding:8px;max-height:calc(100cqh - 136px)}
+    body .hgPart{padding:4px 6px;font-size:12px;gap:6px;white-space:nowrap} body .hgCost{font-size:10.5px}
+    body #hgPartInfo{display:none}
+    body #hgStats{top:52px;right:8px;width:196px;padding:8px;font-size:12px;max-height:calc(100cqh - 136px);overflow-y:auto}
+    body #hgBoardCard{position:static;margin:0;padding:0;background:none;box-shadow:none}
+    body #hgBottom{bottom:6px;width:min(470px,56cqw);gap:4px}
+    body #hgSortie{font-size:14px;padding:9px 20px;letter-spacing:.1em}
+    body #hgTest,body #hgLadder{padding:9px 10px;font-size:12px}
+    body .hgMapRow{font-size:11px} body .hgMapRow .hgSel{max-width:200px;font-size:11px}
+    body #hgIssues{font-size:11px}
+    body #hgHelp{display:none}
+    /* phones: fit between the parts list and the flight data (about 212 px each side), and stay on top of them */
+    body #hgTip{top:56px;width:min(440px,max(260px,calc(100cqw - 424px - var(--safe-left,0px) - var(--safe-right,0px))));font-size:12.5px;padding:10px 12px;max-height:calc(100cqh - 130px);overflow-y:auto}
+    body #hgToast{top:52px}
+    body #hgRunsBox,body .hgModal{max-height:90cqh;overflow-y:auto}
+    /* the leaderboard: one scrolling area (the table), not a scrolling window with a scrolling table inside */
+    body #hgBoardBox{overflow:hidden} body #hgBoardView{max-height:calc(90cqh - 150px)}
+    body #over{justify-content:flex-start;overflow-y:auto;padding:14px 0}
+    body #over h1{font-size:30px}
+    body #finalCause{margin-bottom:4px}
+    body #over .st{font-size:13px} body #over .st b{font-size:16px}
+    body #diag{margin-top:8px;padding:8px 12px}
+  }
+
+  /* lightning flash over the whole screen */
+  #flash{position:absolute;inset:0;background:#f4f8ff;opacity:0;pointer-events:none}
+  /* map choice above the sortie button */
+  .hgMapRow{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim)}
+  .hgMapRow .hgSel{max-width:330px}
+  #hgMapNote.ranked{color:var(--accent)} #hgMapNote.fun{color:#ffb35a}
+  /* power-up chips under the hull panel */
+  #buffs{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+  .buff{font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px;color:#10161d}
+
+  /* bottom left: status */
+  #panel{position:absolute;left:18px;bottom:18px;width:250px;
+    background:rgba(8,16,24,.55);border:1px solid rgba(120,200,230,.22);border-radius:12px;padding:12px 14px;
+    backdrop-filter:blur(6px)}
+  .row{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;color:var(--dim);margin-top:6px}
+  .row b{color:var(--ink);font-size:14px;font-variant-numeric:tabular-nums}
+  #hpWrap{height:9px;background:rgba(255,255,255,.12);border-radius:5px;overflow:hidden}
+  #hp{height:100%;width:100%;background:linear-gradient(90deg,#ff6a5a,#ffd84d,#7dff9a);transition:width .12s}
+  .lbl{font-size:11px;letter-spacing:.1em;color:var(--dim);text-transform:uppercase}
+
+  /* top right: score */
+  #top{position:absolute;right:18px;top:16px;text-align:right;
+    background:rgba(8,16,24,.5);border:1px solid rgba(120,200,230,.2);border-radius:12px;padding:10px 14px}
+  #top .big{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+
+  /* bottom right: radar */
+  #radarWrap{position:absolute;right:18px;bottom:18px;
+    background:rgba(8,16,24,.55);border:1px solid rgba(120,200,230,.22);border-radius:12px;padding:8px}
+  #radar{display:block;width:132px;height:132px}
+
+  /* center message */
+  #msg{position:absolute;left:50%;top:22%;transform:translateX(-50%);
+    font-size:27px;font-weight:800;letter-spacing:.04em;opacity:0;transition:opacity .4s;
+    text-shadow:0 2px 18px rgba(0,0,0,.7);white-space:nowrap;text-align:center}
+  #msg .sub{font-size:15px;font-weight:600;letter-spacing:.02em;margin-top:4px;color:var(--gold)}
+
+  /* controls help */
+  #help{position:absolute;left:18px;top:16px;font-size:11.5px;line-height:1.75;color:var(--dim);
+    background:rgba(8,16,24,.45);border:1px solid rgba(120,200,230,.16);border-radius:10px;padding:9px 12px}
+  #help b{color:var(--ink)}
+
+  /* game over panel */
+  #over{position:fixed;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;
+    background:rgba(5,9,14,.82);pointer-events:auto;gap:6px}
+  #over h1{margin:0 0 4px;font-size:44px;letter-spacing:.06em;color:var(--warn)}
+  #over .st{font-size:15px;color:var(--dim)}
+  #over .st b{color:var(--ink);font-size:20px;font-variant-numeric:tabular-nums}
+  #over .hint{margin-top:16px;font-size:14px;color:var(--accent)}
+  #finalCause{font-size:14px;letter-spacing:.14em;color:var(--gold);margin-bottom:14px}
+  #diag{margin-top:18px;min-width:280px;background:rgba(10,18,26,.7);
+    border:1px solid rgba(120,200,230,.2);border-radius:12px;padding:12px 16px}
+  #diag .dh{font-size:10.5px;letter-spacing:.14em;color:var(--dim);margin-bottom:5px}
+  #diag .dr{display:flex;justify-content:space-between;font-size:13px;color:var(--dim);padding:2px 0}
+  #diag .dr b{color:var(--ink);font-variant-numeric:tabular-nums}
+
+  #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+    background:#0b1118;font-size:15px;color:var(--dim);z-index:10}
+
+  /* ============ Hangar ============ */
+  #hangar{position:fixed;inset:0;display:none;pointer-events:none;user-select:none}
+  #hangar.show{display:block}
+  .hgPanel{position:absolute;pointer-events:auto;background:rgba(8,16,24,.72);
+    border:1px solid rgba(120,200,230,.22);border-radius:12px;backdrop-filter:blur(6px)}
+  .hgHead{font-size:10.5px;letter-spacing:.16em;color:var(--dim);margin-bottom:8px}
+  .hgSub{float:right;letter-spacing:.06em;opacity:.7}
+  .hgTitle{font-size:15px;font-weight:800;letter-spacing:.22em;color:var(--accent);margin-right:6px}
+  .hgSep{width:1px;height:22px;background:rgba(120,200,230,.25);margin:0 4px}
+  .hgBtn{font:inherit;font-size:12px;padding:6px 11px;border-radius:8px;cursor:pointer;
+    background:rgba(255,255,255,.07);color:var(--ink);border:1px solid rgba(120,200,230,.2)}
+  .hgBtn:hover{background:rgba(255,255,255,.14)}
+  .hgBtn.on{border-color:var(--accent);color:var(--accent)}
+
+  #hgTop{left:50%;top:14px;transform:translateX(-50%);display:flex;align-items:center;gap:7px;padding:8px 12px}
+  #hgPresets{display:flex;gap:6px}
+
+  #hgPalette{left:14px;top:14px;width:230px;padding:12px}
+  .hgPart{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:8px;cursor:pointer;
+    border:1px solid transparent;font-size:13px}
+  .hgPart:hover{background:rgba(255,255,255,.06)}
+  .hgPart.sel{background:rgba(102,255,204,.1);border-color:var(--accent)}
+  .hgKey{width:18px;height:18px;border-radius:5px;background:rgba(255,255,255,.1);font-size:11px;
+    display:flex;align-items:center;justify-content:center;color:var(--dim)}
+  .hgSwatch{width:12px;height:12px;border-radius:3px}
+  /* a long name (Missile Pylon) must never squeeze the number and the color box on a narrow phone palette */
+  .hgKey,.hgSwatch,.hgCost{flex-shrink:0} .hgCost i{font-style:normal}
+  @media (max-height: 520px), (max-width: 820px) { body .hgCost i{display:none} body .hgPName{font-size:11.5px} } .hgPName{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .hgCost{margin-left:auto;font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+  #hgPartInfo{margin-top:10px;padding-top:10px;border-top:1px solid rgba(120,200,230,.15);
+    font-size:12px;line-height:1.55;color:var(--dim)}
+  #hgPartInfo b{color:var(--ink)}
+
+  /* A short window: the flight data scrolls, and the leaderboard card stays pinned to the bottom of the panel (it is
+     used a lot, so it never scrolls out of sight). The height is a percent of #hangar (the window, or the turned #app
+     on a phone), so it does not depend on container units. Mac hides scroll bars until you scroll, so the bar is drawn
+     all the time; while some rows are hidden under the card, the card's top edge casts a shadow over them. */
+  #hgStats{right:14px;top:14px;width:240px;padding:12px;max-height:calc(100% - 28px);box-sizing:border-box;overflow-y:auto;overscroll-behavior:contain}
+  #hgStats::-webkit-scrollbar{width:7px} #hgStats::-webkit-scrollbar-track{background:transparent}
+  #hgStats::-webkit-scrollbar-thumb{background:rgba(120,200,230,.4);border-radius:4px}
+  #hgBoardCard{position:sticky;bottom:-12px;margin:4px -12px -12px;padding:2px 12px 12px;background:rgb(13,22,31);
+    border-radius:0 0 12px 12px;transition:box-shadow .15s}
+  #hgBoardCard .hgHead{margin-top:8px !important}
+  #hgStats.more #hgBoardCard{box-shadow:0 -12px 14px -8px rgba(0,0,0,.7),inset 0 1px 0 rgba(120,200,230,.28)}
+  #hgStats .hgRow{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;
+    color:var(--dim);padding:2.5px 0}
+  #hgStats .hgRow b{color:var(--ink);font-variant-numeric:tabular-nums}
+  #hgStats .up{color:#7dff9a} #hgStats .down{color:#ffab5a} #hgStats .bad{color:var(--warn)}
+  .aiGrades{display:flex;gap:6px;margin:2px 0 6px}
+  .aiGrades>div{flex:1;display:flex;justify-content:space-between;align-items:center;padding:3px 8px;border-radius:8px;
+    background:rgba(255,255,255,.05);font-size:11.5px;color:var(--dim)}
+  .grade{font-size:16px;font-weight:800;color:var(--ink);letter-spacing:.02em}
+  .grade.g-top{color:var(--gold)} .grade.g-good{color:var(--accent)} .grade.g-low{color:#ff9a7a}
+  .aiBtns{display:flex;gap:6px} .aiBtns .hgBtn{flex:1;font-size:12px;padding:5px 6px}
+  .aiNote{font-size:11px;color:var(--dim);margin:4px 0 8px;line-height:1.4} .aiNote:empty{display:none}
+  .aiGrades{cursor:pointer} #hgAiTest{margin-bottom:8px}
+  body #hgAiTest .grade{font-size:14px}
+  #hgDuelBox .dRow{display:flex;gap:8px;align-items:center;margin:6px 0;flex-wrap:wrap} #hgDuelBox .dRow b{width:22px}
+  #hgDuelBox select,#hgDuelBox input{flex:1;min-width:140px}
+  #hgDuelOut{margin-top:10px;font-size:13.5px;line-height:1.6}
+  #hgDuelBar{height:10px;border-radius:5px;overflow:hidden;display:flex;margin:6px 0;background:rgba(255,255,255,.08)}
+  #hgDuelBar i{display:block;height:100%}
+  #hgLoadBar{height:7px;background:rgba(255,255,255,.1);border-radius:4px;overflow:hidden;margin:4px 0 10px}
+  #hgLoadFill{height:100%;width:0;background:var(--accent);transition:width .15s}
+
+  #hgBottom{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:auto;width:min(620px,90cqw)}
+  #hgIssues{font-size:12.5px;line-height:1.6;text-align:center}
+  #hgIssues .err{color:var(--warn)} #hgIssues .warn{color:#ffd84d}
+  #hgSortie{font:inherit;font-size:17px;font-weight:800;letter-spacing:.16em;padding:12px 44px;border-radius:12px;
+    cursor:pointer;border:none;background:var(--accent);color:#06221a;box-shadow:0 0 22px rgba(102,255,204,.35)}
+  #hgSortie:disabled{background:#3a4552;color:#7d8a99;box-shadow:none;cursor:not-allowed}
+  #hgTest{font:inherit;font-size:13px;font-weight:700;padding:12px 14px;border-radius:12px;cursor:pointer;
+    background:rgba(255,255,255,.06);color:var(--ink);border:1px solid rgba(120,200,230,.35)}
+  #hgTest:hover{background:rgba(255,255,255,.12)}
+  #hgRunsBox,.hgModal{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(760px,86cqw);display:none;
+    pointer-events:auto;padding:14px 16px;border-radius:12px;background:rgba(10,18,28,.97);
+    border:1px solid rgba(102,255,204,.45);box-shadow:0 12px 40px rgba(0,0,0,.55);z-index:5}
+  #hgRunsText{display:none;width:100%;height:30cqh;margin-top:8px;box-sizing:border-box;resize:vertical;font:12px/1.5 ui-monospace,Menlo,monospace;
+    color:var(--ink);background:rgba(255,255,255,.05);border:1px solid rgba(120,200,230,.2);border-radius:8px;padding:8px;white-space:pre}
+  #hgRunsView{max-height:58cqh;overflow-y:auto;margin-top:4px}
+  .rsCards{display:flex;gap:10px;margin-bottom:12px}
+  .rsCards div{flex:1;padding:8px 12px;border-radius:10px;background:rgba(255,255,255,.05);border:1px solid rgba(120,200,230,.15)}
+  .rsCards b{display:block;font-size:22px;color:var(--ink)} .rsCards span{font-size:11px;color:var(--dim);letter-spacing:.08em}
+  .rsTable{width:100%;border-collapse:collapse;font-size:12.5px}
+  .rsTable th{text-align:left;font-weight:600;font-size:10.5px;letter-spacing:.1em;color:var(--dim);padding:4px 6px;border-bottom:1px solid rgba(120,200,230,.2);position:sticky;top:0;background:#0b1520}
+  .rsTable td{padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.05);white-space:nowrap}
+  .rsTable tr:hover td{background:rgba(255,255,255,.04)}
+  /* Copy: load the plane a board run was flown in */
+  .rsCopy{font:inherit;font-size:10.5px;font-weight:700;letter-spacing:.04em;margin-left:6px;padding:1px 7px;border-radius:5px;cursor:pointer;
+    background:rgba(102,255,204,.1);color:var(--accent);border:1px solid rgba(102,255,204,.4);vertical-align:1px}
+  .rsCopy:hover{background:rgba(102,255,204,.22)} .rsCopy:disabled{opacity:.5;cursor:default}
+  .rsNum{text-align:right;font-variant-numeric:tabular-nums} .rsN{color:var(--dim)}
+  .rsP{font-size:10px;color:var(--dim);border:1px solid rgba(255,255,255,.15);border-radius:4px;padding:0 4px;margin-left:3px}
+  .rsBar{display:flex;width:150px;height:9px;border-radius:5px;overflow:hidden;background:rgba(255,255,255,.08)}
+  .rsBar i{display:block;height:100%}
+  .rsLegend{display:flex;gap:14px;font-size:11px;color:var(--dim);margin-top:8px}
+  .rsLegend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+  .rsChips{display:flex;flex-wrap:wrap;gap:6px}
+  .rsChip{font-size:12px;padding:4px 9px;border-radius:99px;background:rgba(255,255,255,.06)}
+  .rsChip b{color:var(--accent);font-weight:700;margin-left:4px} .rsChip em{color:var(--dim);font-style:normal;margin-left:4px}
+  .rsEmpty{color:var(--dim);font-size:13px;padding:14px 2px}
+  #hgBoardView{max-height:60cqh;overflow-y:auto;margin-top:4px;overscroll-behavior:contain;contain:content}
+  #hgBoardMe{font-size:12.5px;line-height:1.5} #hgBoardMe b{color:var(--gold)}
+  .rsTable tr.rsMe td{background:rgba(255,216,77,.12);color:#fff}
+  .rsGap td{color:var(--dim);text-align:center;padding:2px}
+  .rsYou{font-size:13px;margin-bottom:10px} .rsYou b{color:var(--gold)}
+  .rsTabs{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}
+  .rsU{font-size:10px;color:var(--dim);font-style:italic;margin-left:4px}
+  #hgPilotName{font-size:26px;font-weight:800;margin:10px 0;color:var(--gold)} #hgPilotName span{font-size:14px;color:var(--dim)}
+  .instCols{display:flex;gap:14px;margin:8px 0;font-size:13px;line-height:1.45} .instCols>div{flex:1}
+  .instCols ol{margin:6px 0 0;padding-left:18px} .instCols li{margin:3px 0}
+  .coopRow{display:flex;align-items:center;gap:8px;margin:10px 0;font-size:13px;color:var(--dim)}
+  #coopCode{width:70px;font:700 16px/1 ui-monospace,Menlo,monospace;letter-spacing:.2em;text-transform:uppercase;padding:6px 8px;
+    border-radius:8px;background:rgba(255,255,255,.07);color:var(--ink);border:1px solid rgba(120,200,230,.3)}
+  #coopCodeShow{font:800 26px/1 ui-monospace,Menlo,monospace;letter-spacing:.25em;color:var(--gold)}
+  .coopP{font-size:14px;padding:5px 8px;border-radius:6px;background:rgba(255,255,255,.04);margin:3px 0}
+  .coopP.me{color:#fff;background:rgba(255,216,77,.12)} .coopP span{font-size:10px;color:var(--dim);border:1px solid rgba(255,255,255,.2);border-radius:4px;padding:0 4px;margin-left:4px}
+  #coopStatus{font-size:12.5px;line-height:1.5;color:var(--dim);margin-top:8px;min-height:18px}
+  #hgLadder{font:inherit;font-size:13px;font-weight:700;padding:12px 14px;border-radius:12px;cursor:pointer;white-space:nowrap;
+    background:rgba(255,216,77,.1);color:#ffe38a;border:1px solid rgba(255,216,77,.45)}
+  #hgLadder:hover{background:rgba(255,216,77,.2)}
+  #hgTest,#hgSortie,#hgCoop{white-space:nowrap}
+  @media (max-width:700px){body #hgSortie{padding:9px 12px;letter-spacing:.06em} body #hgTest,body #hgLadder{padding:9px 8px}}   /* the smallest phones (iPhone SE turned) */
+  #hgCoop{font-weight:700;margin-left:6px;background:rgba(102,204,255,.12);color:#9fe8ff;border-color:rgba(102,204,255,.5)}
+  .mateTag{position:absolute;transform:translate(-50%,-160%);font-size:11px;font-weight:700;color:#7dffc8;
+    text-shadow:0 0 4px #000;white-space:nowrap;pointer-events:none}
+  #hgPilotLock.armed,#hgBoardLock.armed{background:rgba(255,106,90,.25);border-color:var(--warn);color:#fff}
+  /* the palette never grows into the help text in the bottom-left corner */
+  #hgPalette{max-height:calc(100cqh - 124px);overflow-y:auto}
+  #testTag{position:absolute;left:50%;top:16px;transform:translateX(-50%);display:none;font-size:12px;font-weight:700;
+    letter-spacing:.12em;padding:6px 14px;border-radius:99px;background:rgba(8,14,22,.8);color:var(--accent);
+    border:1px solid rgba(102,255,204,.4)}
+
+  #hgHelp{position:absolute;left:14px;bottom:14px;font-size:11px;line-height:1.7;color:var(--dim);
+    max-width:min(390px, calc(50cqw - 285px));pointer-events:none}   /* stops before the Test flight / Sortie / AI Ladder row */
+  #hgHelp b{color:var(--ink)}
+  .hgSel{font:inherit;font-size:12.5px;padding:6px 8px;border-radius:8px;cursor:pointer;
+    background:rgba(255,255,255,.07);color:var(--ink);border:1px solid rgba(120,200,230,.2)}
+  .hgSel option{background:#16202b;color:var(--ink)}
+  .hgMineBtns{display:flex;gap:5px;margin-top:6px}
+  .hgMineBtns .hgBtn{flex:1;padding:5px 4px;font-size:11.5px}
+  #hgSaveWhere{margin-top:7px;font-size:11px;color:var(--dim);line-height:1.45}
+  .hgGo{display:flex;gap:10px;align-items:center}
+  #hgRandom{font:inherit;font-size:12.5px;font-weight:700;padding:6px 10px;border-radius:8px;
+    cursor:pointer;background:rgba(255,216,77,.12);color:#ffd84d;border:1px solid rgba(255,216,77,.5)}
+  #hgRandom:hover{background:rgba(255,216,77,.22)}
+  #hgTop button,#hgTop select{white-space:nowrap}
+  #hgToast{position:absolute;left:50%;top:70px;transform:translateX(-50%);font-size:13px;font-weight:600;
+    padding:7px 14px;border-radius:8px;background:rgba(255,106,90,.9);color:#fff;opacity:0;transition:opacity .25s}
+
+  /* low altitude warning */
+  #pullup{position:absolute;left:50%;top:64%;transform:translateX(-50%);display:none;
+    font-size:22px;font-weight:800;letter-spacing:.12em;color:var(--warn);
+    text-shadow:0 0 16px rgba(255,106,90,.8)}
+
+  /* artificial horizon */
+  #horizonBox{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:230px;height:150px;overflow:hidden;opacity:.5;pointer-events:none}
+  #horizon{position:absolute;left:50%;top:50%;width:520px;height:520px;
+    transform-origin:50% 50%;margin:-260px 0 0 -260px}
+  .hline{position:absolute;left:50%;top:50%;width:150px;height:2px;margin-left:-75px;
+    background:var(--accent)}
+  .hline.up1{margin-top:-34px;width:86px;margin-left:-43px;opacity:.6}
+  .hline.up2{margin-top:-68px;width:54px;margin-left:-27px;opacity:.4}
+  .hline.dn1{margin-top:34px;width:86px;margin-left:-43px;opacity:.6}
+  .hline.dn2{margin-top:68px;width:54px;margin-left:-27px;opacity:.4}
+  /* fixed aircraft reference mark at screen center */
+  #hzMark{position:absolute;left:50%;top:50%;width:64px;height:2px;margin:-1px 0 0 -32px;
+    background:var(--gold);opacity:.9}
+  #hzMark:before,#hzMark:after{content:"";position:absolute;top:0;width:2px;height:8px;background:var(--gold)}
+  #hzMark:before{left:0} #hzMark:after{right:0}
+</style>
+</head>
+<body>
+<div id="app">
+
+<canvas id="gl"></canvas>
+
+<div id="hud">
+  <div id="cross"></div><div id="crossH"></div>
+  <div id="lead"></div>
+  <div id="mslWarn">MISSILE<small id="mslDist"></small></div>
+  <div id="mslArrow"></div>
+  <div id="markers"></div>
+
+  <div id="flash"></div>
+
+  <!-- touch controls (phones and tablets): shown in flight only -->
+  <div id="touchUI">
+    <div id="tStick"><div id="tKnob"></div></div>
+    <div id="tTiltBox">
+      <button id="tRecenter" class="tPill">Recenter (level)</button>
+      <button id="tInvert" class="tPill">Climb: pull back</button>
+    </div>
+    <button id="tFire" class="tBtn">FIRE</button>
+    <button id="tMissile" class="tBtn"><span>MISSILE</span><small id="tMslN">0</small></button>
+    <button id="tThrUp" class="tBtn"><span>&#9650;</span><small>FASTER</small></button>
+    <button id="tThrDown" class="tBtn"><span>&#9660;</span><small>SLOWER</small></button>
+    <div id="tTop">
+      <button id="tMode" class="tPill">Tilt: OFF</button>
+      <button id="tFlip" class="tPill" style="display:none">Flip screen</button>
+      <button id="tPause" class="tPill">&#10074;&#10074; Pause</button>
+      <button id="tExit" class="tPill">Hangar</button>
+    </div>
+  </div>
+
+  <!-- co-op: shown the whole time you are down, so nobody has to guess how to get out -->
+  <div id="coopDown">
+    <div class="cdT" id="coopDownT">YOU ARE DOWN</div>
+    <div id="coopDownSub"></div>
+    <div class="cdRow"><span class="keysOnly">Press <b>Esc</b> twice to leave, or</span>
+      <button id="coopDownLeave" class="hgBtn">Leave co-op</button></div>
+  </div>
+
+  <!-- solo flights: Esc / P / the phone's Pause button -->
+  <div id="pauseBox">
+    <div id="pauseMenu">
+      <div id="pauseTitle">PAUSED</div>
+      <div id="pauseInfo"></div>
+      <div class="pbBtns">
+        <button id="pauseResume" class="hgBtn on">Resume</button>
+        <button id="pauseRestart" class="hgBtn">Restart</button>
+        <button id="pauseEnd" class="hgBtn">End run</button>
+        <button id="pauseHangar" class="hgBtn">Back to the hangar</button>
+      </div>
+      <div id="pauseNote"></div>
+      <div class="keysOnly" style="font-size:11.5px;color:var(--dim);margin-top:8px">Esc or P: resume</div>
+    </div>
+    <div id="pauseCount">3</div>
+  </div>
+
+  <div id="vsBoard"></div>
+  <div id="vsPause"></div>
+
+  <div id="testTag">TEST FLIGHT &nbsp;·&nbsp; NO ENEMIES &nbsp;·&nbsp; ESC OR H: HANGAR</div>
+
+  <div id="tutBox">
+    <div id="tutStep">TRAINING</div>
+    <div id="tutText"></div>
+    <div id="tutBar"><div id="tutFill"></div></div>
+    <div style="font-size:11px;color:var(--dim);margin-top:6px;display:flex;justify-content:space-between;align-items:center">
+      <span class="keysOnly">Esc: menu</span><button id="tutSkip" class="hgBtn">Skip training</button></div>
+  </div>
+
+  <div id="help">
+    <b>W/S</b> Pull up / Dive &nbsp; <b>A/D</b> Bank left / right &nbsp; <b>Q/E</b> Yaw<br>
+    <b>Shift/Ctrl</b> Throttle &nbsp; <b>Space</b> Cannon &nbsp; <b>F</b> Missile (needs lock) &nbsp; <b>Esc</b> Pause<br>
+    Hold <b>A</b> or <b>D</b> to turn. Shoot the <span style="color:var(--gold)">gold ring</span>, not the plane.
+  </div>
+
+  <!-- artificial horizon: bank and pitch at a glance, so you never flip over without noticing -->
+  <div id="horizonBox">
+    <div id="horizon">
+      <div class="hline"></div>
+      <div class="hline up1"></div><div class="hline up2"></div>
+      <div class="hline dn1"></div><div class="hline dn2"></div>
+    </div>
+    <div id="hzMark"></div>
+  </div>
+
+  <div id="top">
+    <div class="lbl">SCORE</div>
+    <div class="big" id="score">0</div>
+    <div class="lbl" style="margin-top:4px">BEST <b id="best" style="color:var(--gold)">0</b></div>
+  </div>
+
+  <div id="panel">
+    <div class="lbl">HULL <span id="hpTxt" style="float:right;color:var(--ink)">100</span></div>
+    <div id="hpWrap"><div id="hp"></div></div>
+    <div class="row"><span>PLANE</span><b id="planeName" style="font-size:12.5px">-</b></div>
+    <div class="row"><span>MAP</span><b id="mapName" style="font-size:11.5px">-</b></div>
+    <div class="row"><span>WAVE</span><b id="wave">0</b></div>
+    <div class="row"><span>SPEED</span><b id="spd">0</b></div>
+    <div class="row"><span>ALT</span><b id="alt">0</b></div>
+    <div class="row"><span>BANK</span><b id="bank">0&deg;</b></div>
+    <div class="row"><span>MISSILES</span><b id="msl">0</b></div>
+    <div id="buffs"></div>
+  </div>
+
+  <div id="radarWrap"><canvas id="radar" width="132" height="132"></canvas></div>
+
+  <div id="msg"></div>
+  <div id="pullup">&#9650; PULL UP &#9650;</div>
+</div>
+
+<div id="over">
+  <h1 id="overTitle">SHOT DOWN</h1>
+  <div id="finalCause">SHOT DOWN BY ENEMY FIRE</div>
+  <div class="st">Score <b id="finalScore">0</b></div>
+  <div class="st">Survived to wave <b id="finalWave">0</b></div>
+  <div class="st">Best <b id="finalBest">0</b></div>
+  <div class="st">Plane <b id="finalPlane">-</b> &nbsp;<span id="finalPlaneBest" style="font-size:13px"></span></div>
+  <div class="st" id="finalRank" style="font-size:14px;color:var(--gold)"></div>
+  <!-- versus: final table and rating change -->
+  <div id="vsResult"><table id="vsTable" class="vsTable"></table><div id="vsElo"></div><div id="vsWait"></div></div>
+
+  <div class="overBtns">
+    <button id="overR" class="hgBtn">Fly again</button>
+    <button id="overN" class="hgBtn">Random plane</button>
+    <button id="overH" class="hgBtn">Hangar</button>
+  </div>
+
+  <!-- diagnostics panel: where this run's damage actually came from -->
+  <div id="diag">
+    <div class="dh">DAMAGE TAKEN</div>
+    <div class="dr"><span>Enemy fire</span><b id="dmgBullet">0%</b></div>
+    <div class="dr"><span>Collisions</span><b id="dmgRam">0%</b></div>
+    <div class="dr"><span>Drone blasts</span><b id="dmgDrone">0%</b></div>
+    <div class="dr"><span>Terrain / weather</span><b id="dmgTerrain">0%</b></div>
+    <div class="dh" style="margin-top:10px">FLIGHT</div>
+    <div class="dr"><span>Tree strikes</span><b id="finalCrashes">0</b></div>
+    <div class="dr"><span>Cannon accuracy</span><b id="finalAcc">0%</b></div>
+    <div class="dr"><span>Time alive</span><b id="finalTime">0s</b></div>
+  </div>
+
+  <div id="overKeys" class="hint keysOnly"><b>R</b> fly again &nbsp;·&nbsp; <b>N</b> fly again with a random plane &nbsp;·&nbsp; <b>H</b> hangar (change / edit / rebuild plane)</div>
+</div>
+
+<!-- ============ Hangar ============ -->
+<div id="hangar">
+  <div id="hgTop" class="hgPanel">
+    <div class="hgTitle">HANGAR</div>
+    <select id="hgPresetSel" class="hgSel" title="Load one of the 10 sample planes"></select>
+    <button id="hgRandom" title="Load a random sample plane into the hangar. You can modify it before you fly.">&#127922; Random sample plane</button>
+    <div class="hgSep"></div>
+    <button id="hgMirror" class="hgBtn on">Mirror: ON</button>
+    <button id="hgClear" class="hgBtn">Clear</button>
+    <div class="hgSep"></div>
+    <button id="hgTraining" class="hgBtn" title="Replay the flight training">Training</button>
+    <button id="hgRemove" class="hgBtn touchOnly" title="Tap parts to remove them">Remove: OFF</button>
+    <button id="hgFlip" class="hgBtn touchOnly" style="display:none" title="The game is upside down: turn it round">Flip</button>
+    <button id="hgInstall" class="hgBtn touchOnly" style="display:none" title="Play full screen from your Home Screen">Full screen</button>
+  </div>
+
+  <div id="hgTip">
+    <div id="hgTipCount"></div>
+    <div id="hgTipText"></div>
+    <div class="hgTipBtns">
+      <button id="hgTipSkip" class="hgBtn">Skip tips</button>
+      <button id="hgTipNext" class="hgBtn on">Next</button>
+    </div>
+  </div>
+
+  <div id="hgPalette" class="hgPanel">
+    <div class="hgHead">PARTS <span class="hgSub">load</span></div>
+    <div id="hgParts"></div>
+    <div id="hgPartInfo"></div>
+
+    <div class="hgHead" style="margin-top:14px">MY PLANES</div>
+    <select id="hgMineSel" class="hgSel" style="width:100%"></select>
+    <div class="hgMineBtns">
+      <button id="hgLoadMine" class="hgBtn">Load</button>
+      <button id="hgSaveMine" class="hgBtn">Save as…</button>
+      <button id="hgDelMine" class="hgBtn">Delete</button>
+    </div>
+    <div class="hgMineBtns">
+      <button id="hgShareBtn" class="hgBtn" title="Send this plane to a friend as a link">&#128279; Share / import plane</button>
+    </div>
+    <div id="hgSaveWhere"></div>
+    <button id="hgRunsBtn" class="hgBtn" style="width:100%;margin-top:8px" title="Your last 20 runs as text, for balancing">&#128203; Copy stats</button>
+  </div>
+
+  <div id="hgRunsBox">
+    <div class="hgHead">YOUR RECENT RUNS <span class="hgSub">newest first · runs under 30 s left out</span></div>
+    <div id="hgRunsView"></div>
+    <textarea id="hgRunsText" readonly spellcheck="false"></textarea>
+    <div class="hgTipBtns">
+      <button id="hgRunsClose" class="hgBtn">Close</button>
+      <button id="hgRunsCopy" class="hgBtn on">Copy as text</button>
+    </div>
+  </div>
+
+  <div id="hgStats" class="hgPanel">
+    <div class="hgHead">FLIGHT DATA <span class="hgSub">vs stock</span></div>
+    <div id="hgAiTest">
+      <div id="hgAiGrades" class="aiGrades">
+        <div><span>Waves</span><b id="hgGradeW" class="grade">-</b></div>
+        <div><span>Duels</span><b id="hgGradeD" class="grade">-</b></div>
+      </div>
+      <div class="aiBtns"><button id="hgAiTestBtn" class="hgBtn">AI test</button><button id="hgDuelBtn" class="hgBtn" title="Two designs fight, both flown by the same computer pilot">Design duel</button></div>
+      <div id="hgAiNote" class="aiNote"></div>
+    </div>
+    <div id="hgLoadRow">
+      <div class="hgRow"><span>LOAD</span><b id="hgLoad">0 / 0</b></div>
+      <div id="hgLoadBar"><div id="hgLoadFill"></div></div>
+      <button id="hgCreative" class="hgBtn" style="width:100%;margin:2px 0 8px"
+        title="No load limit and no build area limit. Planes over the normal budget or area go on the Creative board instead of the normal ones.">Creative mode: OFF</button>
+    </div>
+    <div id="hgStatRows"></div>
+    <div id="hgBoardCard" style="display:none">
+      <div class="hgHead" style="margin:12px 0 4px">&#127942; LEADERBOARD</div>
+      <div id="hgBoardMe"></div>
+      <button id="hgBoardBtn" class="hgBtn" style="width:100%;margin-top:7px" title="Top 100 pilots: today, week, month, year, all time, AI Ladder, Versus, Creative">Open leaderboard</button>
+    </div>
+  </div>
+
+  <div id="hgPilotBox" class="hgModal" style="width:min(460px,86cqw)">
+    <div class="hgHead">CHOOSE YOUR PILOT CALLSIGN</div>
+    <div id="hgPilotName"></div>
+    <div style="font-size:12.5px;line-height:1.55;color:var(--dim)">This is how you appear on the leaderboard. Get another one as
+      often as you like. Once you lock it in it is yours for good, and your runs show up on the board.</div>
+    <div class="hgTipBtns">
+      <button id="hgPilotLater" class="hgBtn">Later</button>
+      <button id="hgPilotReroll" class="hgBtn">Another one</button>
+      <button id="hgPilotLock" class="hgBtn on">Lock it in</button>
+    </div>
+  </div>
+
+  <div id="hgBoardBox" class="hgModal">
+    <div class="hgHead">&#127942; TOP 100 PILOTS <span class="hgSub">one entry per pilot: their best run</span></div>
+    <div class="rsTabs"><button id="hgBoardDaily" class="hgBtn on">Today</button><button id="hgBoardWeek" class="hgBtn">Week</button><button id="hgBoardMonth" class="hgBtn">Month</button><button id="hgBoardYear" class="hgBtn">Year</button><button id="hgBoardAll" class="hgBtn">All time</button><button id="hgBoardLadder" class="hgBtn">AI Ladder</button><button id="hgBoardPvp" class="hgBtn">Versus (Elo)</button><button id="hgBoardCreative" class="hgBtn">Creative</button></div>
+    <div id="hgBoardView"></div>
+    <div class="hgTipBtns">
+      <button id="hgBoardReroll" class="hgBtn" title="Get a different random callsign (your number stays the same)">New callsign</button>
+      <button id="hgBoardLock" class="hgBtn" title="Keep this callsign for good. It can never be changed again.">Lock in callsign</button>
+      <button id="hgBoardClose" class="hgBtn">Close</button>
+    </div>
+  </div>
+
+  <div id="hgDuelBox" class="hgModal" style="width:min(560px,90cqw)">
+    <div class="hgHead">&#9876;&#65039; DESIGN DUEL <span class="hgSub">both flown by the same computer pilot: the designs decide</span></div>
+    <div class="dRow"><b>A</b><select id="hgDuelA" class="hgSel"></select><input id="hgDuelCodeA" class="hgSel" placeholder="or a plane code / link"></div>
+    <div class="dRow"><b>B</b><select id="hgDuelB" class="hgSel"></select><input id="hgDuelCodeB" class="hgSel" placeholder="or a plane code / link"></div>
+    <div class="shNote">20 duels, 1v1, versus rules (<span id="hgDuelRules">cannon 60 %, missiles 90</span>), side by side starts, sides swapped every duel. Local only, nothing is ranked.</div>
+    <div id="hgDuelOut"></div>
+    <div class="hgTipBtns">
+      <button id="hgDuelRun" class="hgBtn on">Fight</button>
+      <button id="hgDuelClose" class="hgBtn">Close</button>
+    </div>
+  </div>
+
+  <div id="hgInstallBox" class="hgModal" style="width:min(560px,90cqw)">
+    <div class="hgHead">PLAY FULL SCREEN: ADD IT TO YOUR HOME SCREEN</div>
+    <div class="instCols">
+      <div><b>iPhone / iPad (Safari)</b>
+        <ol><li>Tap <b>&middot;&middot;&middot;</b> (next to the address bar) or the <b>Share</b> button, then <b>Share</b></li>
+          <li>Scroll down, tap <b>Add to Home Screen</b></li>
+          <li>Keep <b>Open as Web App</b> on, tap <b>Add</b></li></ol></div>
+      <div><b>Android (Chrome)</b>
+        <ol><li>Tap <b>&#8942;</b> (top right)</li>
+          <li>Tap <b>Add to Home screen</b> (or <b>Install app</b>)</li>
+          <li>Tap <b>Install</b> / <b>Add</b></li></ol></div>
+    </div>
+    <div style="font-size:12px;color:var(--dim);line-height:1.5">Then start the game from the new <b>Skybreak</b> icon: no address bar, more room to fly,
+      and your progress stays on this phone. It works even with rotation lock on: just turn the phone sideways.</div>
+    <div class="hgTipBtns"><button id="hgInstallClose" class="hgBtn on">Got it</button></div>
+  </div>
+
+  <div id="hgShareBox" class="hgModal" style="width:min(540px,90cqw)">
+    <div class="hgHead">SHARE THIS PLANE</div>
+    <div class="shNote">Tell a friend the code (they type it under Load a shared plane), or send the link: opening it puts this plane in their hangar.</div>
+    <div class="shRow"><div id="hgShareCode">......</div>
+      <button id="hgShareCopyCode" class="hgBtn on">Copy code</button><button id="hgShareCopy" class="hgBtn">Copy link</button></div>
+    <textarea id="hgShareText" readonly spellcheck="false"></textarea>
+    <div class="hgHead" style="margin-top:14px">LOAD A SHARED PLANE</div>
+    <div class="shRow"><input id="hgShareIn" placeholder="Code (6 letters), link, or SKY1... code" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      <button id="hgShareLoad" class="hgBtn">Load</button></div>
+    <div id="hgShareMsg"></div>
+    <div class="hgTipBtns"><button id="hgShareClose" class="hgBtn">Close</button></div>
+  </div>
+
+  <div id="hgCoopBox" class="hgModal" style="width:min(480px,86cqw)">
+    <div class="hgHead">&#128101; MULTIPLAYER <span class="hgSub">2 to 4 players</span></div>
+    <div id="coopMenu">
+      <button id="coopQuick" class="hgBtn on coopQuick">&#9889; Quick match<small>versus 1v1, rated: finds you an opponent</small></button>
+      <div id="coopOnline"></div>
+      <div class="coopRow" style="margin-bottom:4px">Or create a room:
+        <label class="coopPub"><input type="checkbox" id="coopPublic" checked> list it for anyone to join</label></div>
+      <div class="coopModes">
+        <button id="coopCreate" class="hgBtn on">Team (co-op)<small>together against the waves</small></button>
+        <button id="coopCreateVs" class="hgBtn on">Versus (PvP)<small>every pilot for themselves, rated (Elo)</small></button>
+      </div>
+      <div class="coopRow" style="margin:12px 0 4px">Open rooms:</div>
+      <div id="coopRooms"><div class="coopNone">Looking...</div></div>
+      <div class="coopRow">or join with a code:
+        <input id="coopCode" maxlength="4" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <button id="coopJoin" class="hgBtn">Join</button></div>
+    </div>
+    <div id="coopSearch" style="display:none"><div class="coopRadar"></div><div id="coopSearchText"></div></div>
+    <div id="coopRoom" style="display:none">
+      <div class="coopRow">ROOM CODE <b id="coopCodeShow"></b></div>
+      <div id="coopMode"></div>
+      <div id="coopList"></div>
+    </div>
+    <div id="coopStatus"></div>
+    <div class="hgTipBtns">
+      <button id="coopClose" class="hgBtn">Close</button>
+      <button id="coopStart" class="hgBtn on" style="display:none">Start</button>
+    </div>
+  </div>
+
+  <div id="hgBottom">
+    <div id="hgIssues"></div>
+    <div class="hgMapRow">MAP <select id="hgMapSel" class="hgSel" title="Only today's map counts for the leaderboard"></select><span id="hgMapNote"></span>
+      <button id="hgCoop" class="hgBtn" title="Play with 1 to 3 friends: as a team, or against each other (room code)">Multiplayer (2-4)</button></div>
+    <div class="hgGo">
+      <button id="hgTest" title="Fly this plane with no enemies. Nothing is recorded. (T)">Test flight</button>
+      <button id="hgSortie">SORTIE (PLAY) &#9654;</button>
+      <button id="hgLadder" title="1v1 against an AI pilot that gets better every level. First to 3 kills; a loss just means trying that level again">AI Ladder</button>
+    </div>
+  </div>
+
+  <div id="hgHelp">
+    <b>Left-click</b> place &nbsp;·&nbsp; <b>Right-click</b> remove &nbsp;·&nbsp; <b>Drag</b> rotate &nbsp;·&nbsp;
+    <b>Wheel</b> zoom &nbsp;·&nbsp; <b>1-7</b> pick part &nbsp;·&nbsp; <b>M</b> mirror &nbsp;·&nbsp; <b>T</b> test flight &nbsp;·&nbsp; <b>Enter</b> sortie<br>
+    <span style="color:#ffd84d">&#9679;</span> center of mass &nbsp;
+    <span style="color:#66e0ff">&#9711;</span> center of lift. Keep the mass dot slightly ahead of the lift ring
+  </div>
+  <div id="hgToast"></div>
+</div>
+
+<div id="loading">Loading… (fetching three.js from CDN on first run)</div>
+
+<!-- ============ Self-check: make problems show up on screen ============
+     What the player sees is the truth, so two things:
+     1. Any runtime error is shown on screen in red (instead of silently freezing)
+     2. Detect stale cached JS: index.html is revalidated every time, but the browser
+        may still serve old JS modules from cache. If the build ids differ, ask for a hard refresh. -->
+<div id="sysBanner" style="display:none;position:fixed;left:50%;top:12px;transform:translateX(-50%);
+  z-index:99;max-width:min(760px,92cqw);padding:12px 16px;border-radius:10px;font:600 13px/1.55 -apple-system,sans-serif;
+  background:rgba(180,30,30,.95);color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.5);white-space:pre-wrap"></div>
+</div><!-- #app -->
+<script>
+  window.__EXPECT_BUILD = '2026-11-04b';
+  // A cached old page (a home-screen app kept one for days, and its runs had no take-off tickets): ask the server
+  // for the current page, and if it is a newer version, open that. ?b=... is a new address, so nothing cached is
+  // reused; it reloads at most once per version and never goes back to an older one.
+  (function () {
+    if (!window.fetch || location.protocol === 'file:') return;
+    fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (t) {
+      var m = t.match(/__EXPECT_BUILD = '([^']+)'/);
+      if (!m || m[1] <= window.__EXPECT_BUILD || location.search.indexOf('b=' + m[1]) >= 0) return;
+      location.replace(location.pathname + '?b=' + encodeURIComponent(m[1]) + location.hash);
+    }).catch(function () {});
+  })();
+  (function () {
+    var box = document.getElementById('sysBanner');
+    function show(msg) {
+      box.style.display = 'block';
+      box.textContent = (box.textContent ? box.textContent + '\n\n' : '') + msg;
+    }
+    window.addEventListener('error', function (e) {
+      // a harmless browser notice about layout timing, not a failure: never worth a red banner
+      if (/ResizeObserver loop/.test(e.message || '')) return;
+      show('ERROR: ' + e.message + (e.filename ? '\n  at ' + e.filename.split('/').pop() + ':' + e.lineno : ''));
+    });
+    window.addEventListener('unhandledrejection', function (e) {
+      show('ERROR (async): ' + (e.reason && e.reason.stack ? e.reason.stack.split('\n').slice(0, 3).join('\n') : e.reason));
+    });
+    window.__moduleFailed = function (e) {
+      show('Could not load the game scripts.\nIf this is the first run, check your internet connection (three.js loads from a CDN).' +
+           (e && e.message ? '\n  ' + e.message : ''));
+    };
+    // After 8s: a different build id means stale files; no build id at all means the scripts never finished starting.
+    setTimeout(function () {
+      if (window.__BUILD === window.__EXPECT_BUILD) return;
+      if (window.__BUILD) {
+        show('Your browser is running OLD cached game files (loaded: ' + window.__BUILD +
+             ', expected: ' + window.__EXPECT_BUILD + ').\nPress  Cmd+Shift+R  (Mac)  or  Ctrl+Shift+R  (Windows) to force a reload.');
+      } else {
+        show('The game has not started yet. On a slow connection, give it a few more seconds.\n' +
+             'If nothing changes, press  Cmd+Shift+R  (Mac)  or  Ctrl+Shift+R  (Windows) to force a reload.');
+      }
+    }, 8000);
+  })();
+</script>
+
+<!-- three.js ships only ES modules since r160, so the game needs an import map and must be opened through a server
+     (double-click start.command, or host it on a static site).
+
+     Cache busting: the import map below sends every game module to "js/<name>.js?v=<build>", so each new build
+     has brand-new URLs and a browser (or a static host that caches files) can never mix old
+     and new files. When you add a new file in js/, add its name to MODULES. make_push.py and the tests check this. -->
+<script>
+  (function () {
+    var MODULES = ['main', 'config', 'terrain', 'plane', 'weapons', 'enemies', 'waves', 'hud', 'hangar',
+                   'parts', 'spec', 'partMesh', 'struts', 'pick', 'blueprint', 'save', 'powerups', 'tutorial', 'leaderboard', 'weather', 'maps', 'touch',
+                   'net', 'coop', 'lobby', 'view', 'versus', 'share', 'ladder', 'autopilot', 'planetest', 'duel', 'rand'];
+    var imports = { three: 'https://unpkg.com/three@0.169.0/build/three.module.js' };
+    MODULES.forEach(function (m) {
+      imports['./js/' + m + '.js'] = './js/' + m + '.js?v=' + window.__EXPECT_BUILD;
+    });
+    var map = document.createElement('script');
+    map.type = 'importmap';
+    map.textContent = JSON.stringify({ imports: imports });
+    document.currentScript.after(map);
+  })();
+</script>
+
+<script type="module">
+  import('./js/main.js').catch(function (e) { window.__moduleFailed && window.__moduleFailed(e); });
+</script>
+
+</body>
+
+
+</html>
