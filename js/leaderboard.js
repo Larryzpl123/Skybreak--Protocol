@@ -134,6 +134,12 @@ export const Leaderboard = {
     return this.call('/plane/share', { id: me.id, token: me.token, data });
   },
   // -> { code, data } | { error }
+  // a backup code -> the pilot it belongs to ({ id, callsign, locked }) or { error } (nothing changes on the server)
+  async whoami(id, token) {
+    if (!this.enabled()) return { error: 'disabled' };
+    return this.call('/whoami', { id, token });
+  },
+
   async getPlane(code) {
     if (!this.enabled()) return { error: 'disabled' };
     return this.call(`/plane/get?code=${encodeURIComponent(code)}`);

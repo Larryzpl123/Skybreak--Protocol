@@ -53,6 +53,8 @@ const fmtDate = ms => {
   return d.toLocaleDateString('en-US', same ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' });
 };
 // a pilot who hasn't locked in a callsign yet may still change it: say so, so nobody gets confused
+// the pilot's backup code: number + secret token (the server only keeps a hash of the token)
+export const backupCode = me => `SKYP-${me.id}-${me.token}`;
 const pilotName = r => `${r.callsign} #${r.id}`;
 const pilot = r => `${esc(r.callsign)} <span class="rsP">#${r.id}</span>` +
   (r.locked === 0 ? '<span class="rsU" title="This pilot can still change their callsign">not locked</span>' : '');
@@ -362,13 +364,13 @@ export class Hangar {
 
   // one of the hangar's windows is open (main.js stops drawing the 3D plane behind it)
   modalOpen() {
-    return ['hgRunsBox', 'hgBoardBox', 'hgPilotBox', 'hgCoopBox', 'hgInstallBox', 'hgShareBox', 'hgDuelBox'].some(id => this.$(id).style.display === 'block');
+    return ['hgRunsBox', 'hgBoardBox', 'hgPilotBox', 'hgCoopBox', 'hgInstallBox', 'hgShareBox', 'hgDuelBox', 'hgBackupBox'].some(id => this.$(id).style.display === 'block');
   }
 
   onKey(e) {
     const k = e.key.toLowerCase();
     // while the stats box is open, keys belong to it (Cmd+C must not pick parts or start a flight); Esc closes it
-    for (const box of ['hgRunsBox', 'hgBoardBox', 'hgPilotBox', 'hgCoopBox', 'hgInstallBox', 'hgShareBox', 'hgDuelBox']) {
+    for (const box of ['hgRunsBox', 'hgBoardBox', 'hgPilotBox', 'hgCoopBox', 'hgInstallBox', 'hgShareBox', 'hgDuelBox', 'hgBackupBox']) {
       if (this.$(box).style.display === 'block') {
         if (k === 'escape') this.$(box).style.display = 'none';
         return;
@@ -734,6 +736,66 @@ export class Hangar {
     this.toast(`Copied ${got.bp.name}. Save as... keeps it.`, true);
     return true;
   }
+  /* ---------- pilot backup code: the same pilot on another browser or device ---------- */
+  openBackup() {
+    this.$('hgBoardBox').style.display = 'none';
+    this.$('hgBackupBox').style.display = 'block';
+    this.$('hgBackupIn').value = '';
+    this.backupArmed = null;
+    this.$('hgBackupRestore').classList.remove('armed');
+    this.$('hgBackupRestore').textContent = 'Restore';
+    this.backupMsg('');
+    this.showBackup();
+  }
+  showBackup() {
+    const me = Leaderboard.me();
+    this.$('hgBackupWho').textContent = me ? `This browser's pilot: ${me.callsign} #${me.id}` : 'This browser has no pilot yet (fly a run on today\'s map, or restore one below).';
+    this.$('hgBackupCode').value = me ? backupCode(me) : '';
+    this.$('hgBackupCopy').disabled = !me;
+  }
+  backupMsg(text, bad = false) { const m = this.$('hgBackupMsg'); m.textContent = text; m.className = bad ? 'bad' : ''; }
+  copyBackup() {
+    const t = this.$('hgBackupCode'), text = t.value;
+    if (!text) return;
+    const clip = typeof navigator !== 'undefined' && navigator.clipboard;
+    const manual = () => { if (t.focus) { t.focus(); t.select(); } this.backupMsg('Select the code and copy it (Cmd+C / Ctrl+C)'); };
+    if (clip && clip.writeText) clip.writeText(text).then(() => this.backupMsg('Copied. Keep it somewhere safe and private.'), manual);
+    else manual();
+  }
+  // paste a code -> checked with the server -> this browser's pilot (asks twice if it replaces another one)
+  async restoreBackup(text) {
+    const m = String(text || '').match(/SKYP-(\d{1,9})-([0-9a-f]{48})/i);
+    if (!m) { this.backupMsg('That is not a backup code (it starts with SKYP-).', true); return false; }
+    const id = Number(m[1]), token = m[2].toLowerCase();
+    const cur = Leaderboard.me();
+    if (cur && cur.id === id && cur.token === token) { this.backupMsg('That is already this browser\'s pilot.'); return false; }
+    this.backupMsg('Checking the code...');
+    const r = await Leaderboard.whoami(id, token);
+    if (r.error) {
+      this.backupMsg(r.status === 401 ? 'That code does not match any pilot (check you copied all of it).' : `Could not check it now (${r.error}). Try again later.`, true);
+      return false;
+    }
+    if (cur && this.backupArmed !== id) {
+      this.backupArmed = id;
+      this.$('hgBackupRestore').classList.add('armed');
+      this.$('hgBackupRestore').textContent = 'Replace?';
+      this.backupMsg(`This replaces this browser's pilot ${cur.callsign} #${cur.id} with ${r.callsign} #${r.id}. Copy the code above first if you want to keep ${cur.callsign}. Press Replace? to go ahead.`, true);
+      return false;
+    }
+    Save.setLeaderboard({ id: r.id, token, callsign: r.callsign, locked: r.locked === 1 });
+    this.backupArmed = null;
+    this.$('hgBackupRestore').classList.remove('armed');
+    this.$('hgBackupRestore').textContent = 'Restore';
+    this.$('hgBackupIn').value = '';
+    this.ranks = {};
+    this.showBackup();
+    this.refreshBoardCard();
+    if (this.refreshRanks) this.refreshRanks();
+    this.backupMsg(`Welcome back, ${r.callsign} #${r.id}.`);
+    this.toast(`Pilot restored: ${r.callsign} #${r.id}`, true);
+    return true;
+  }
+
   async rerollCallsign() {
     const r = await Leaderboard.reroll();
     if (r.error) {
@@ -868,6 +930,11 @@ export class Hangar {
     this.$('hgBoardAll').onclick = () => this.openBoard('all');
     this.$('hgBoardReroll').onclick = () => this.rerollCallsign();
     this.$('hgBoardLock').onclick = () => this.lockCallsign();
+    this.$('hgBoardBackup').onclick = () => this.openBackup();
+    this.$('hgBackupCopy').onclick = () => this.copyBackup();
+    this.$('hgBackupRestore').onclick = () => this.restoreBackup(this.$('hgBackupIn').value);
+    this.$('hgBackupIn').onkeydown = e => { if (e.key === 'Enter') this.restoreBackup(this.$('hgBackupIn').value); };
+    this.$('hgBackupClose').onclick = () => { this.$('hgBackupBox').style.display = 'none'; };
     this.$('hgPilotLock').onclick = () => this.lockCallsign(Date.now(), 'hgPilotLock');
     this.$('hgPilotReroll').onclick = () => this.pilotReroll();
     this.$('hgPilotLater').onclick = () => { this.$('hgPilotBox').style.display = 'none'; };

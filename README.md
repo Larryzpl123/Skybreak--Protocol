@@ -219,6 +219,10 @@ such as *Crimson Falcon*, which you can reroll as often as you like and never wr
 contain anything rude. The first time you open the hangar you pick one; when you like it, **lock it in**: from then on it is yours and
 can't change. Only locked-in pilots are listed, so a name on the board never changes. Runs you fly before locking in
 are kept and show up the moment you lock.
+**Backup code:** your pilot lives in this browser. The leaderboard window's **Backup code** button shows a code to keep
+(privately: whoever has it can fly as you); paste it on another browser or device to keep the same pilot, number and
+board places. A private / incognito window forgets its pilot when it closes, so save the code first.
+
 Training and test flights never count. The server is a single Cloudflare Worker (free tier); its code is not in
 this repository, since its checks are what keeps the boards fair. With no server URL in `js/config.js` the feature
 simply stays hidden.

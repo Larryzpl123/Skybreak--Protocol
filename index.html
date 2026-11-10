@@ -177,6 +177,10 @@
   #hgShareText{width:100%;height:44px;margin-top:8px;box-sizing:border-box;resize:none;font:12px/1.4 ui-monospace,Menlo,monospace;color:var(--ink);
     background:rgba(255,255,255,.05);border:1px solid rgba(120,200,230,.25);border-radius:8px;padding:8px;word-break:break-all}
   .shRow{display:flex;gap:8px;align-items:center;margin-top:6px}
+  #hgBackupCode,#hgBackupIn{flex:1;min-width:0;font:12px ui-monospace,Menlo,monospace;padding:7px 9px;border-radius:8px;
+    background:rgba(255,255,255,.07);color:var(--ink);border:1px solid rgba(120,200,230,.3)}
+  #hgBackupMsg{font-size:12.5px;line-height:1.5;min-height:18px;margin-top:8px;color:var(--accent)} #hgBackupMsg.bad{color:var(--warn)}
+  #hgBackupRestore.armed{background:rgba(255,106,90,.25);border-color:var(--warn);color:#fff}
   #hgShareIn{flex:1;font:12.5px ui-monospace,Menlo,monospace;padding:7px 9px;border-radius:8px;background:rgba(255,255,255,.07);
     color:var(--ink);border:1px solid rgba(120,200,230,.3)}
   #hgShareMsg{font-size:12.5px;margin-top:8px;min-height:16px;color:var(--accent)} #hgShareMsg.bad{color:var(--warn)}
@@ -714,8 +718,24 @@
     <div class="hgTipBtns">
       <button id="hgBoardReroll" class="hgBtn" title="Get a different random callsign (your number stays the same)">New callsign</button>
       <button id="hgBoardLock" class="hgBtn" title="Keep this callsign for good. It can never be changed again.">Lock in callsign</button>
+      <button id="hgBoardBackup" class="hgBtn" title="Keep your pilot when you change browser or device">Backup code</button>
       <button id="hgBoardClose" class="hgBtn">Close</button>
     </div>
+  </div>
+
+  <div id="hgBackupBox" class="hgModal" style="width:min(560px,90cqw)">
+    <div class="hgHead">&#128273; PILOT BACKUP CODE</div>
+    <div id="hgBackupWho" class="shNote"></div>
+    <div class="shRow"><input id="hgBackupCode" readonly spellcheck="false" autocomplete="off">
+      <button id="hgBackupCopy" class="hgBtn on">Copy</button></div>
+    <div class="shNote">This code is your pilot's key: whoever has it can fly as you, so keep it to yourself (a note, a password
+      manager). On another browser or device, paste it below to keep the same pilot, number and board places.
+      A private / incognito window forgets its pilot when it closes: save the code first.</div>
+    <div class="hgHead" style="margin-top:14px">RESTORE A PILOT</div>
+    <div class="shRow"><input id="hgBackupIn" placeholder="SKYP-..." autocomplete="off" spellcheck="false">
+      <button id="hgBackupRestore" class="hgBtn">Restore</button></div>
+    <div id="hgBackupMsg"></div>
+    <div class="hgTipBtns"><button id="hgBackupClose" class="hgBtn">Close</button></div>
   </div>
 
   <div id="hgDuelBox" class="hgModal" style="width:min(560px,90cqw)">
@@ -822,7 +842,7 @@
   background:rgba(180,30,30,.95);color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.5);white-space:pre-wrap"></div>
 </div><!-- #app -->
 <script>
-  window.__EXPECT_BUILD = '2026-11-04b';
+  window.__EXPECT_BUILD = '2026-11-10a';
   // A cached old page (a home-screen app kept one for days, and its runs had no take-off tickets): ask the server
   // for the current page, and if it is a newer version, open that. ?b=... is a new address, so nothing cached is
   // reused; it reloads at most once per version and never goes back to an older one.
