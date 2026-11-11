@@ -55,6 +55,14 @@ const fmtDate = ms => {
 // a pilot who hasn't locked in a callsign yet may still change it: say so, so nobody gets confused
 // the pilot's backup code: number + secret token (the server only keeps a hash of the token)
 export const backupCode = me => `SKYP-${me.id}-${me.token}`;
+// all time: the pilot just above me and how many more points pass them (a tie goes to whoever got there first,
+// and every score is a multiple of 10, so passing takes their score - mine + 10)
+export function nextUp(res) {
+  if (!res || res.error || !res.me || !res.me.rank || res.me.rank <= 1 || res.me.score == null) return null;
+  const above = (res.rows || []).filter(r => r.id !== res.me.id)[res.me.rank - 2];
+  if (!above) return null;
+  return { id: above.id, callsign: above.callsign, gap: Math.max(10, above.score - res.me.score + 10) };
+}
 const pilotName = r => `${r.callsign} #${r.id}`;
 const pilot = r => `${esc(r.callsign)} <span class="rsP">#${r.id}</span>` +
   (r.locked === 0 ? '<span class="rsU" title="This pilot can still change their callsign">not locked</span>' : '');
@@ -132,7 +140,9 @@ export function boardHtml(res, myId) {
   const me = res.me;
   const daily = res.board === 'daily';
   const span = res.from ? ` (${fmtDay(res.from)} to ${fmtDay(res.to)})` : '';
+  const planeName = res.plane === 'Custom' ? 'planes of their own (Custom)' : esc(res.plane || '');
   const what = daily ? `today's map (${esc(res.day || '')}, UTC)`
+    : res.board === 'plane' ? `the board for ${planeName}`
     : res.board === 'week' ? `this week's board${span}` : res.board === 'month' ? `this month's board${span}`
     : res.board === 'year' ? `this year's board${span}` : 'the all-time board';
   let you = `<div class="rsYou">Fly a run of at least 30 seconds on today's map to get your pilot number and a place on the board.</div>`;
@@ -680,8 +690,10 @@ export class Hangar {
     // always both boards, each labelled, so it is clear which rank is which
     const R = this.ranks || {};
     const fmt = x => (x && x.rank ? `<b>#${x.rank}</b> of ${x.total}` : '-');
+    // all time: how far the next pilot up is (chasing the one just above is a goal; chasing #1 often is not)
+    const next = R.next ? `<br><span class="rsNext">${R.next.gap.toLocaleString('en-US')} more to pass <b>${esc(R.next.callsign)} #${R.next.id}</b></span>` : '';
     const ranks = me && me.locked && (R.daily || R.all)
-      ? `<br>Today's map: ${fmt(R.daily)} · All time: ${fmt(R.all)}` : '';
+      ? `<br>Today's map: ${fmt(R.daily)} · All time: ${fmt(R.all)}` + next : '';
     this.$('hgBoardMe').innerHTML = me
       ? `You are <b>${esc(me.callsign)} #${me.id}</b>` + ranks +
         (me.locked ? '' : '<br><span style="color:var(--dim)">Callsign not locked in yet: open the leaderboard to change or lock it. Only locked-in pilots are listed.</span>')
@@ -693,7 +705,7 @@ export class Hangar {
     if (!Leaderboard.enabled() || !me) return;
     const [d, a] = await Promise.all([Leaderboard.top('daily'), Leaderboard.top('all')]);
     const pick = r => (r && !r.error && r.me ? { rank: r.me.rank, total: r.total } : null);
-    this.ranks = { daily: pick(d), all: pick(a) };
+    this.ranks = { daily: pick(d), all: pick(a), next: nextUp(a) };
     this.refreshBoardCard();
   }
   async openBoard(tab = this.boardTab || 'daily') {
@@ -705,9 +717,22 @@ export class Hangar {
     this.$('hgBoardPvp').classList.toggle('on', tab === 'pvp');
     this.$('hgBoardLadder').classList.toggle('on', tab === 'ladder');
     this.$('hgBoardCreative').classList.toggle('on', tab === 'creative');
+    this.$('hgBoardPlane').classList.toggle('on', tab === 'plane');
+    // by plane: a choice of the 10 sample planes and Custom; first time, the plane in the hangar
+    const sel = this.$('hgBoardPlaneSel');
+    if (!sel.children.length) {
+      for (const name of PRESETS.map(p => p.name).concat('Custom')) {
+        const o = document.createElement('option');
+        o.value = name; o.textContent = name === 'Custom' ? 'Planes of their own (Custom)' : name;
+        sel.appendChild(o);
+      }
+    }
+    if (!this.boardPlane) this.boardPlane = PRESETS.some(p => p.name === this.bp.name) ? this.bp.name : 'Custom';
+    sel.value = this.boardPlane;
+    this.$('hgBoardPlaneRow').style.display = tab === 'plane' ? 'block' : 'none';
     this.$('hgBoardView').innerHTML = '<div class="rsEmpty">Loading...</div>';
     this.refreshLockButtons();
-    const res = await Leaderboard.top(tab);
+    const res = await Leaderboard.top(tab, this.boardPlane);
     if (res && !res.error && res.me) {
       this.ranks = this.ranks || {};
       this.ranks[tab] = { rank: res.me.rank, total: res.total };
@@ -928,6 +953,8 @@ export class Hangar {
     this.$('hgBoardMonth').onclick = () => this.openBoard('month');
     this.$('hgBoardYear').onclick = () => this.openBoard('year');
     this.$('hgBoardAll').onclick = () => this.openBoard('all');
+    this.$('hgBoardPlane').onclick = () => this.openBoard('plane');
+    this.$('hgBoardPlaneSel').onchange = () => { this.boardPlane = this.$('hgBoardPlaneSel').value; this.openBoard('plane'); };
     this.$('hgBoardReroll').onclick = () => this.rerollCallsign();
     this.$('hgBoardLock').onclick = () => this.lockCallsign();
     this.$('hgBoardBackup').onclick = () => this.openBackup();

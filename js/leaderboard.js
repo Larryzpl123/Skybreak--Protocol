@@ -101,11 +101,12 @@ export const Leaderboard = {
   },
 
   // board 'daily' (today's map, default), 'week', 'month', 'year', 'all', 'pvp' (versus Elo), 'creative' or 'ladder' (AI Ladder) -> { board, day, rows, total, me } or { error }
-  async top(board = 'daily') {
+  // plane: for board 'plane', a sample plane's name or 'Custom'
+  async top(board = 'daily', plane = 'Custom') {
     if (!this.enabled()) return { error: 'disabled' };
     const me = this.me();
-    const b = ['all', 'pvp', 'week', 'month', 'year', 'ladder', 'creative'].includes(board) ? board : 'daily';
-    return this.call(`/top?board=${b}` + (me ? `&id=${me.id}` : ''));
+    const b = ['all', 'pvp', 'week', 'month', 'year', 'ladder', 'creative', 'plane'].includes(board) ? board : 'daily';
+    return this.call(`/top?board=${b}` + (b === 'plane' ? `&plane=${encodeURIComponent(plane)}` : '') + (me ? `&id=${me.id}` : ''));
   },
 
   // quick match queue (versus 1v1): call find() every 2 s while searching

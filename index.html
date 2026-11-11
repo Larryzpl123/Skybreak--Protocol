@@ -180,6 +180,7 @@
   #hgBackupCode,#hgBackupIn{flex:1;min-width:0;font:12px ui-monospace,Menlo,monospace;padding:7px 9px;border-radius:8px;
     background:rgba(255,255,255,.07);color:var(--ink);border:1px solid rgba(120,200,230,.3)}
   #hgBackupMsg{font-size:12.5px;line-height:1.5;min-height:18px;margin-top:8px;color:var(--accent)} #hgBackupMsg.bad{color:var(--warn)}
+  .rsNext{color:var(--accent);font-size:12px}
   #hgBackupRestore.armed{background:rgba(255,106,90,.25);border-color:var(--warn);color:#fff}
   #hgShareIn{flex:1;font:12.5px ui-monospace,Menlo,monospace;padding:7px 9px;border-radius:8px;background:rgba(255,255,255,.07);
     color:var(--ink);border:1px solid rgba(120,200,230,.3)}
@@ -713,7 +714,8 @@
 
   <div id="hgBoardBox" class="hgModal">
     <div class="hgHead">&#127942; TOP 100 PILOTS <span class="hgSub">one entry per pilot: their best run</span></div>
-    <div class="rsTabs"><button id="hgBoardDaily" class="hgBtn on">Today</button><button id="hgBoardWeek" class="hgBtn">Week</button><button id="hgBoardMonth" class="hgBtn">Month</button><button id="hgBoardYear" class="hgBtn">Year</button><button id="hgBoardAll" class="hgBtn">All time</button><button id="hgBoardLadder" class="hgBtn">AI Ladder</button><button id="hgBoardPvp" class="hgBtn">Versus (Elo)</button><button id="hgBoardCreative" class="hgBtn">Creative</button></div>
+    <div class="rsTabs"><button id="hgBoardDaily" class="hgBtn on">Today</button><button id="hgBoardWeek" class="hgBtn">Week</button><button id="hgBoardMonth" class="hgBtn">Month</button><button id="hgBoardYear" class="hgBtn">Year</button><button id="hgBoardAll" class="hgBtn">All time</button><button id="hgBoardPlane" class="hgBtn">By plane</button><button id="hgBoardLadder" class="hgBtn">AI Ladder</button><button id="hgBoardPvp" class="hgBtn">Versus (Elo)</button><button id="hgBoardCreative" class="hgBtn">Creative</button></div>
+    <div id="hgBoardPlaneRow" style="display:none;margin-top:8px"><select id="hgBoardPlaneSel" class="hgSel" title="One board per plane"></select></div>
     <div id="hgBoardView"></div>
     <div class="hgTipBtns">
       <button id="hgBoardReroll" class="hgBtn" title="Get a different random callsign (your number stays the same)">New callsign</button>
@@ -842,7 +844,7 @@
   background:rgba(180,30,30,.95);color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.5);white-space:pre-wrap"></div>
 </div><!-- #app -->
 <script>
-  window.__EXPECT_BUILD = '2026-11-10a';
+  window.__EXPECT_BUILD = '2026-11-11b';
   // A cached old page (a home-screen app kept one for days, and its runs had no take-off tickets): ask the server
   // for the current page, and if it is a newer version, open that. ?b=... is a new address, so nothing cached is
   // reused; it reloads at most once per version and never goes back to an older one.

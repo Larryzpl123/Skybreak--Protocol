@@ -219,6 +219,10 @@ such as *Crimson Falcon*, which you can reroll as often as you like and never wr
 contain anything rude. The first time you open the hangar you pick one; when you like it, **lock it in**: from then on it is yours and
 can't change. Only locked-in pilots are listed, so a name on the board never changes. Runs you fly before locking in
 are kept and show up the moment you lock.
+**By plane:** one more tab with a board for each sample plane and one for planes of their own (Custom): every pilot's
+best run in that plane, runs from before the tab existed included. The hangar card also says how many more points
+pass the pilot just above you on the all-time board.
+
 **Backup code:** your pilot lives in this browser. The leaderboard window's **Backup code** button shows a code to keep
 (privately: whoever has it can fly as you); paste it on another browser or device to keep the same pilot, number and
 board places. A private / incognito window forgets its pilot when it closes, so save the code first.

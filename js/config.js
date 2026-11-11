@@ -5,7 +5,7 @@ export const CFG = {
 
   // Build id: the self-check in index.html compares against this. A mismatch means the browser is running stale cached JS.
   // Whenever the code changes, bump this AND __EXPECT_BUILD in index.html.
-  build: '2026-11-10a',
+  build: '2026-11-11b',
 
 
   // ---------- Online leaderboard ----------
