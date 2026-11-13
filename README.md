@@ -160,6 +160,8 @@ Watch for the **PULL UP** warning.
 Six kinds of terrain, each generated fresh from a seed: **Forest**, **Desert** (dunes), **Snow Peaks** (tall and steep),
 **Islands** (open sea: the water is as solid as the ground), **Canyon** (a high plateau cut by deep canyons) and
 **City** (street grid with parks, towers up to about 650 m downtown; flying into a building is a crash).
+Each map grows its own trees: pines in the forest, snowy firs on the peaks, cacti in the desert, palms on the
+islands, junipers on the canyon floors and utility poles along the city streets (all of them cost hull if you hit them).
 Each map is 10 km across. You can climb to 2500 m: in the last 400 m the plane climbs less and less, then stops.
 The whole plane touches the ground, not just its middle: a wing tip, the nose or the tail in the ground (or a building) is a crash.
 Each comes with its own weather:

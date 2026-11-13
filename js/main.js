@@ -4,7 +4,7 @@
 
 import * as THREE from 'three';
 import { CFG } from './config.js';
-import { heightAt, updateTrees, restoreTrees, setMap, BIOMES } from './terrain.js';
+import { heightAt, updateTrees, restoreTrees, setMap, BIOMES, getTrees } from './terrain.js';
 import { Weather, WEATHER } from './weather.js';
 import { TRAINING_MAP, mapLabel } from './maps.js';
 import { Plane } from './plane.js';
@@ -1276,7 +1276,7 @@ if (DEBUG) window.__sb = {
   View,
   coop, net, lobby, ladder, startLadder, ladderHit, openLadder,
   get glInfo() { return renderer.info; },      // GPU memory: geometries and textures alive (leak checks)
-  debugIncoming, camera, Quality, Sound, effects,
+  debugIncoming, camera, Quality, Sound, effects, getTrees,
   get duelist() { return duelist; },
   forceDeath() { plane.hp = 0; plane.alive = false; endGame(); },
   hit: (d, cause) => onPlayerHit(d, cause),

@@ -251,8 +251,8 @@ export function setMap(scene, map) {
   if (terrainMesh && next.biome === MAP.biome && next.seed === MAP.seed) return false;
   disposeMesh(scene, terrainMesh); terrainMesh = null;
   disposeMesh(scene, waterMesh); waterMesh = null;
-  disposeMesh(scene, trunkMesh); trunkMesh = null;
-  disposeMesh(scene, leafMesh); leafMesh = null;
+  for (const m of treeMeshes) disposeMesh(scene, m);
+  treeMeshes = [];
   disposeMesh(scene, cityMesh); cityMesh = null;
   MAP = next;
   [OX, OZ] = seedOffset(next.seed);
@@ -269,7 +269,7 @@ const CELL = 240;                         // spatial grid cell size
 const treeGrid = new Map();               // "cx,cz" -> [tree]
 const key = (cx, cz) => cx + ',' + cz;
 let allTrees = [];                        // each tree: { idx, x, z, h, s, r, top, dead }
-let trunkMesh = null, leafMesh = null;
+let treeMeshes = [], treeKind = null;     // one instanced mesh per part of the map's tree kind (TREE_KINDS)
 const falling = [];                       // trees currently falling
 
 const _m = new THREE.Matrix4();
@@ -286,18 +286,73 @@ function addTreeToGrid(t) {
 }
 
 // pivot at the tree base: rotate by q, slide the base by slide, uniform scale
+// Each map grows its own kind of tree (2026-11-12; every map used to have the same pine). A kind is a few parts, each
+// a shape with a colour, a place and a tilt, all in units of the tree's own scale s; r and top are what you can hit.
+// Low-poly like everything else, and one instanced mesh per part, so a whole map of trees is a handful of draw calls.
+const UP = new THREE.Vector3(0, 1, 0);
+const tilt = (x, y, z) => new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z));
+const TREE_KINDS = {
+  // forest: the pine it has always had (the AI Test flies here, so its trees must not change)
+  pine: { r: 15, top: 50, parts: [
+    { geo: () => new THREE.CylinderGeometry(3, 4.5, 26, 5), color: 'trunk', at: [0, 13, 0] },
+    { geo: () => new THREE.ConeGeometry(16, 46, 6), color: 'leaf', at: [0, 46, 0] },
+  ] },
+  // snow peaks: a dark fir with snow on top
+  snowpine: { r: 14, top: 52, parts: [
+    { geo: () => new THREE.CylinderGeometry(3, 4.5, 22, 5), color: 'trunk', at: [0, 11, 0] },
+    { geo: () => new THREE.ConeGeometry(15, 40, 6), color: 'leaf', at: [0, 40, 0] },
+    { geo: () => new THREE.ConeGeometry(8.5, 17, 6), color: 0xeef3f8, at: [0, 55, 0] },
+  ] },
+  // desert: a saguaro cactus, a trunk with two arms that turn up
+  cactus: { r: 7, top: 34, parts: [
+    { geo: () => new THREE.CylinderGeometry(3.2, 3.8, 34, 6), color: 'leaf', at: [0, 17, 0] },
+    { geo: () => new THREE.CylinderGeometry(2.3, 2.3, 8, 6), color: 'leaf', at: [5, 13, 0], rot: tilt(0, 0, Math.PI / 2) },
+    { geo: () => new THREE.CylinderGeometry(2.3, 2.5, 12, 6), color: 'leaf', at: [8.5, 18.5, 0] },
+    { geo: () => new THREE.CylinderGeometry(2.1, 2.1, 7, 6), color: 'leaf', at: [-4.6, 18, 0], rot: tilt(0, 0, Math.PI / 2) },
+    { geo: () => new THREE.CylinderGeometry(2.1, 2.3, 9, 6), color: 'leaf', at: [-7.8, 22, 0] },
+  ] },
+  // islands: a palm, a thin leaning trunk and six drooping leaves
+  palm: { r: 11, top: 44, parts: [
+    { geo: () => new THREE.CylinderGeometry(1.6, 2.6, 42, 6), color: 'trunk', at: [2.5, 21, 0], rot: tilt(0, 0, -0.12) },
+    ...[0, 1, 2, 3, 4, 5].map(k => ({ geo: () => new THREE.ConeGeometry(2.6, 22, 4), color: 'leaf',
+      at: [5 + 9 * Math.cos(k * Math.PI / 3), 39, 9 * Math.sin(k * Math.PI / 3)],
+      rot: tilt(0, -k * Math.PI / 3, -Math.PI / 2 - 0.35) })),
+  ] },
+  // canyon: a juniper, short and twisted with a flat crown, like the ones on canyon floors
+  juniper: { r: 13, top: 26, parts: [
+    { geo: () => new THREE.CylinderGeometry(2.4, 3.8, 15, 5), color: 'trunk', at: [0, 7, 0], rot: tilt(0.15, 0, 0.12) },
+    { geo: () => new THREE.OctahedronGeometry(10, 1), color: 'leaf', at: [1.5, 18, 1], scale: [1.5, 0.65, 1.25] },
+    { geo: () => new THREE.OctahedronGeometry(6, 1), color: 'leaf', at: [-6, 15, -3], scale: [1.3, 0.7, 1.1] },
+  ] },
+  // city: a utility pole along a street
+  pole: { r: 3, top: 44, parts: [
+    { geo: () => new THREE.CylinderGeometry(0.9, 1.2, 44, 6), color: 'trunk', at: [0, 22, 0] },
+    { geo: () => new THREE.BoxGeometry(16, 1.1, 1.1), color: 'trunk', at: [0, 40, 0] },
+    { geo: () => new THREE.BoxGeometry(10, 0.9, 0.9), color: 'trunk', at: [0, 35.5, 0] },
+  ] },
+};
+const KIND_OF = { forest: 'pine', snow: 'snowpine', desert: 'cactus', islands: 'palm', canyon: 'juniper', city: 'pole' };
+export const treeKindOf = biome => KIND_OF[biome] || 'pine';
+
+const _pq = new THREE.Quaternion(), _ps = new THREE.Vector3();
 function writeTree(t, q, slideX = 0, slideZ = 0, scale = 1) {
   const s = t.s * scale;
-  _sc.set(s, s, s);
-  // trunk: centered 13s above the base
-  _off.set(0, 13 * t.s * scale, 0).applyQuaternion(q);
-  _p.set(t.x + slideX + _off.x, t.h + _off.y, t.z + slideZ + _off.z);
-  _m.compose(_p, q, _sc); trunkMesh.setMatrixAt(t.idx, _m);
-  // canopy: centered 46s above the base
-  _off.set(0, 46 * t.s * scale, 0).applyQuaternion(q);
-  _p.set(t.x + slideX + _off.x, t.h + _off.y, t.z + slideZ + _off.z);
-  _m.compose(_p, q, _sc); leafMesh.setMatrixAt(t.idx, _m);
+  const K = TREE_KINDS[treeKind];
+  for (let i = 0; i < K.parts.length; i++) {
+    const part = K.parts[i];
+    // spun round its own axis (t.spin) so the trees of a map do not all face the same way, then tipped over (q)
+    _pq.setFromAxisAngle(UP, t.spin || 0);
+    _off.set(part.at[0] * s, part.at[1] * s, part.at[2] * s).applyQuaternion(_pq).applyQuaternion(q);
+    _p.set(t.x + slideX + _off.x, t.h + _off.y, t.z + slideZ + _off.z);
+    if (part.rot) _pq.multiply(part.rot);
+    _pq.premultiply(q);
+    const sc = part.scale || [1, 1, 1];
+    _ps.set(s * sc[0], s * sc[1], s * sc[2]);
+    _m.compose(_p, _pq, _ps);
+    treeMeshes[i].setMatrixAt(t.idx, _m);
+  }
 }
+function treesChanged() { for (const m of treeMeshes) m.instanceMatrix.needsUpdate = true; }
 
 // where a tree may grow on each map (h = raw ground height)
 const TREE_OK = {
@@ -332,31 +387,38 @@ export function buildTrees(scene) {
   const rand = rng(MAP.seed * 7919 + BIOME_KEYS.indexOf(MAP.biome));
   const half = size / 2 - 60;
 
-  const trunkGeo = new THREE.CylinderGeometry(3, 4.5, 26, 5);
-  const leafGeo = new THREE.ConeGeometry(16, 46, 6);
-  trunkMesh = new THREE.InstancedMesh(trunkGeo, new THREE.MeshLambertMaterial({ color: B.trees.trunk }), treeCount);
-  leafMesh = new THREE.InstancedMesh(leafGeo, new THREE.MeshLambertMaterial({ color: B.trees.leaf }), treeCount);
+  treeKind = treeKindOf(MAP.biome);
+  const K = TREE_KINDS[treeKind];
+  treeMeshes = K.parts.map(part => new THREE.InstancedMesh(part.geo(),
+    new THREE.MeshLambertMaterial({ color: part.color === 'trunk' ? B.trees.trunk : part.color === 'leaf' ? B.trees.leaf : part.color }), treeCount));
+  // city: poles along the streets (the gaps at the block edges, x or z = k * block), not dotted about the parks
+  const street = () => {
+    const k = Math.round((rand() * 2 - 1) * half / CITY.block), side = rand() < 0.5 ? -1 : 1;
+    const along = (rand() * 2 - 1) * half, edge = k * CITY.block + side * (CITY.street / 2 - 7);
+    return rand() < 0.5 ? [edge, along] : [along, edge];
+  };
 
   let placed = 0, tries = 0;
   while (placed < treeCount && tries < treeCount * 12) {
     tries++;
-    const x = (rand() * 2 - 1) * half;
-    const z = (rand() * 2 - 1) * half;
+    let x, z;
+    if (treeKind === 'pole') [x, z] = street();
+    else { x = (rand() * 2 - 1) * half; z = (rand() * 2 - 1) * half; }
     const h = groundAt(x, z);
-    if (!ok(h) || isBuilding(x, z) || (MAP.biome === 'city' && isBuilding(x + 20, z) + isBuilding(x - 20, z) + isBuilding(x, z + 20) + isBuilding(x, z - 20))) continue;
+    if (!ok(h) || isBuilding(x, z)) continue;
+    if (treeKind !== 'pole' && MAP.biome === 'city' && isBuilding(x + 20, z) + isBuilding(x - 20, z) + isBuilding(x, z + 20) + isBuilding(x, z - 20)) continue;
 
-    const s = 0.8 + rand() * 1.3;
-    const t = { idx: placed, x, z, h, s, r: 15 * s, top: h + 50 * s, dead: false };
+    const sc = treeKind === 'pole' ? 0.9 + rand() * 0.25 : 0.8 + rand() * 1.3;
+    const spin = treeKind === 'pine' ? 0 : rand() * Math.PI * 2;      // (pines are round: unchanged, see TREE_KINDS)
+    const t = { idx: placed, x, z, h, s: sc, spin, r: K.r * sc, top: h + K.top * sc, dead: false };
     allTrees.push(t);
     writeTree(t, _q.identity());
     addTreeToGrid(t);
     placed++;
   }
-  trunkMesh.count = placed; leafMesh.count = placed;
-  trunkMesh.instanceMatrix.needsUpdate = true;
-  leafMesh.instanceMatrix.needsUpdate = true;
-  scene.add(trunkMesh); scene.add(leafMesh);
-  return { trunks: trunkMesh, leaves: leafMesh, count: placed };
+  for (const m of treeMeshes) { m.count = placed; scene.add(m); }
+  treesChanged();
+  return { kind: treeKind, meshes: treeMeshes, count: placed };
 }
 
 export function getTrees() { return allTrees; }
@@ -391,7 +453,7 @@ export function knockTree(t, dir, speed) {
 
 const FALL_TIME = 0.9, FADE_TIME = 0.45;
 export function updateTrees(dt) {
-  if (!falling.length || !trunkMesh) return;
+  if (!falling.length || !treeMeshes.length) return;
   const axis = new THREE.Vector3();
   for (let i = falling.length - 1; i >= 0; i--) {
     const f = falling[i];
@@ -406,13 +468,12 @@ export function updateTrees(dt) {
     writeTree(f.t, _q, f.dx * slide, f.dz * slide, fade);
     if (fade <= 0) falling.splice(i, 1);
   }
-  trunkMesh.instanceMatrix.needsUpdate = true;
-  leafMesh.instanceMatrix.needsUpdate = true;
+  treesChanged();
 }
 
 // stand all the trees back up when a new run starts
 export function restoreTrees() {
-  if (!trunkMesh) return;
+  if (!treeMeshes.length) return;
   falling.length = 0;
   _q.identity();
   for (const t of allTrees) {
@@ -420,8 +481,7 @@ export function restoreTrees() {
     t.dead = false;
     writeTree(t, _q);
   }
-  trunkMesh.instanceMatrix.needsUpdate = true;
-  leafMesh.instanceMatrix.needsUpdate = true;
+  treesChanged();
 }
 
 // main entry point for ground (and tree) collision
