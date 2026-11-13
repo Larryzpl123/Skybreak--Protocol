@@ -13,6 +13,8 @@ import { specFromStats } from './spec.js';
 import { buildBlueprintMesh } from './partMesh.js';
 import { pickCell } from './pick.js';
 import { CFG } from './config.js';
+import { Quality } from './quality.js';
+import { Sound } from './sound.js';
 import { Leaderboard } from './leaderboard.js';
 import { BIOMES, BIOME_KEYS } from './terrain.js';
 import { mapForDay, randomMap, mapLabel, dayString } from './maps.js';
@@ -903,7 +905,7 @@ export class Hangar {
     // Sample plane dropdown: 10 planes; picking one loads it into the hangar (to look at, modify, or learn from)
     const sel = this.$('hgPresetSel');
     const ph = document.createElement('option');
-    ph.value = ''; ph.textContent = `Sample planes (${PRESETS.length}) ▾`;
+    ph.value = ''; ph.textContent = `Samples (${PRESETS.length}) ▾`;
     sel.appendChild(ph);
     PRESETS.forEach((p, i) => {
       const o = document.createElement('option');
@@ -958,6 +960,18 @@ export class Hangar {
     this.$('hgBoardReroll').onclick = () => this.rerollCallsign();
     this.$('hgBoardLock').onclick = () => this.lockCallsign();
     this.$('hgBoardBackup').onclick = () => this.openBackup();
+    const soundLabel = () => `Sound: ${Sound.on() ? 'ON' : 'OFF'}`;
+    this.$('hgSound').textContent = soundLabel();
+    this.$('hgSound').onclick = () => { Sound.unlock(); Sound.toggle(); this.$('hgSound').textContent = soundLabel(); };
+    // the button names the setting (Auto / High / Low); what Auto chose is in its tooltip and on the pause screen
+    const gfx = () => {
+      const s = Quality.setting();
+      this.$('hgGfx').textContent = `Graphics: ${s === 'auto' ? 'Auto' : s === 'high' ? 'High' : 'Low'}`;
+      this.$('hgGfx').title = `Graphics: ${Quality.label()}. Auto uses High unless this device measured too slow. Click to switch`;
+    };
+    gfx();
+    this.$('hgGfx').onclick = () => { Quality.cycle(); gfx(); };
+    Quality.onChange(gfx);
     this.$('hgBackupCopy').onclick = () => this.copyBackup();
     this.$('hgBackupRestore').onclick = () => this.restoreBackup(this.$('hgBackupIn').value);
     this.$('hgBackupIn').onkeydown = e => { if (e.key === 'Enter') this.restoreBackup(this.$('hgBackupIn').value); };

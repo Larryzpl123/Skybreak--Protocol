@@ -38,6 +38,9 @@ const blank = () => ({
   recent: [],             // the last RECENT runs: { plane, parts, wave, score, build, time, acc, cause, dmg:{fire,ram,drone,terrain} }
   ladderLevel: 0,         // AI Ladder: the highest level cleared on this device
   planeTests: {},         // AI Test results by plane layout { key: { v, wave, waveGrade, share, duelGrade, at } }, at most MAX_TESTS
+  quality: 'auto',        // graphics: 'auto' | 'high' | 'low' (quality.js)
+  sound: true,            // sound on / off (sound.js)
+  qualityAuto: null,      // what Auto settled on for this device: null (not measured too slow yet) | 'low'
 });
 const MAX_TESTS = 40;
 const GRADE_RE = /^(F|D|C|B|A|S|SS|SSS)$/;
@@ -87,6 +90,9 @@ function sanitize(o) {
       .slice(0, MAX_PLANES);
   }
   d.ladderLevel = num(o.ladderLevel);
+  d.quality = ['high', 'low'].includes(o.quality) ? o.quality : 'auto';
+  d.sound = o.sound !== false;
+  d.qualityAuto = o.qualityAuto === 'low' ? 'low' : null;
   if (o.planeTests && typeof o.planeTests === 'object') {
     for (const [k, v] of Object.entries(o.planeTests).slice(-MAX_TESTS)) {
       if (/^[0-9a-f]{8}$/.test(k) && v && GRADE_RE.test(v.waveGrade) && GRADE_RE.test(v.duelGrade)) {

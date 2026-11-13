@@ -155,13 +155,13 @@ export const HANGAR_TIPS_TOUCH = [
   'This is the <b>hangar</b>. The plane in the middle is the one you will fly.',
   'Pick a part on the left, then <b>tap</b> a face of the plane to attach it. Turn on <b>Remove</b> (top) to tap parts away. <b>Drag</b> to turn the view, <b>pinch</b> to zoom.',
   '<b>Flight Data</b> (right) shows how your build flies compared to the Stock Fighter. Every part uses <b>load</b>; the Core gives you 120.',
-  'Not sure what to build? Load one of the <b>Sample planes</b> or tap <b>&#127922; Random sample plane</b>. When you are ready, tap <b>SORTIE (PLAY)</b>.',
+  'Not sure what to build? Load one of the <b>Sample planes</b> or tap <b>&#127922; Random</b>. When you are ready, tap <b>SORTIE (PLAY)</b>.',
 ];
 export const HANGAR_TIPS = [
   'This is the <b>hangar</b>. The plane on the grid is the one you will fly.',
   'Pick a part on the left (or press <b>1</b>-<b>7</b>), then <b>left-click</b> a face of the plane to attach it. <b>Right-click</b> removes a part. <b>Drag</b> to rotate the view.',
   '<b>Flight Data</b> (right) shows how your build flies compared to the Stock Fighter. Every part uses <b>load</b>; the Core gives you 120.',
-  'Not sure what to build? Load one of the <b>Sample planes</b> or hit <b>&#127922; Random sample plane</b>. When you are ready, press <b>SORTIE (PLAY)</b>.',
+  'Not sure what to build? Load one of the <b>Sample planes</b> or hit <b>&#127922; Random</b>. When you are ready, press <b>SORTIE (PLAY)</b>.',
 ];
 
 export class HangarTips {

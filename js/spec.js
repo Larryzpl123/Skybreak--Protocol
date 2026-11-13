@@ -120,6 +120,8 @@ export function specFromStats(s) {
     missileStart: Math.round(missileMax / 3),
     missileReload: s.pylons ? CFG.missile.reloadPerPylon / s.pylons : 0,   // seconds per missile, 0 = no reload
     firepower, gunDamageMul,
+    // the share of thrust from jets, 0..1 (only for the engine sound: propellers buzz, jets roar)
+    jetShare: s.engines.length ? s.engines.filter(e => e.type === 'jet').reduce((t, e) => t + e.thrust, 0) / s.engines.reduce((t, e) => t + e.thrust, 0) : 0,
     // multipliers for the hangar UI (relative to stock)
     mul: { speed: speedMax / B.speedMax, turn: turnMul, roll: rollMul, accel: accelMul },
   };

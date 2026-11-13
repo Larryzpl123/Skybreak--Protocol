@@ -74,7 +74,7 @@
   .marker.ace{border-color:#f5f5f5;border-style:dashed}
   .marker.carrier{border-color:#66ccff;border-radius:50%}
   .marker.player{border-color:#ff9f43;width:30px;height:30px;border-radius:6px}
-  .marker.diving{border-width:3px;animation:blink .3s steps(2) infinite}
+  .marker.diving{border-width:3px;animation:blink .5s steps(2) infinite}   /* 2 blinks a second: under 3 (photosensitivity) */
   @keyframes blink{50%{opacity:.15}}
   .marker.locked{border-color:var(--gold);box-shadow:0 0 10px rgba(255,216,77,.6);opacity:1}
   .marker.edge{border-radius:50%;border-width:0;width:0;height:0;
@@ -181,6 +181,10 @@
     background:rgba(255,255,255,.07);color:var(--ink);border:1px solid rgba(120,200,230,.3)}
   #hgBackupMsg{font-size:12.5px;line-height:1.5;min-height:18px;margin-top:8px;color:var(--accent)} #hgBackupMsg.bad{color:var(--warn)}
   .rsNext{color:var(--accent);font-size:12px}
+  @media (max-width: 1500px) { #hgTop .hgTitle{display:none} #hgTop{gap:5px;padding:8px 9px} #hgTop .hgSep{margin:0 1px} #hgTop #hgPresetSel{max-width:150px} }   /* (room for the Sound / Graphics buttons) */
+  #hgTop{max-width:calc(100cqw - 516px);overflow-x:auto;scrollbar-width:none}   /* never over the side panels: scrolls sideways if it must */
+  #hgTop > *{flex-shrink:0}
+  #pausePerf{font-size:11.5px;color:var(--dim);margin-top:10px;font-variant-numeric:tabular-nums}
   #hgBackupRestore.armed{background:rgba(255,106,90,.25);border-color:var(--warn);color:#fff}
   #hgShareIn{flex:1;font:12.5px ui-monospace,Menlo,monospace;padding:7px 9px;border-radius:8px;background:rgba(255,255,255,.07);
     color:var(--ink);border:1px solid rgba(120,200,230,.3)}
@@ -528,8 +532,10 @@
         <button id="pauseRestart" class="hgBtn">Restart</button>
         <button id="pauseEnd" class="hgBtn">End run</button>
         <button id="pauseHangar" class="hgBtn">Back to the hangar</button>
+        <button id="pauseSound" class="hgBtn">Sound: ON</button>
       </div>
       <div id="pauseNote"></div>
+      <div id="pausePerf"></div>
       <div class="keysOnly" style="font-size:11.5px;color:var(--dim);margin-top:8px">Esc or P: resume</div>
     </div>
     <div id="pauseCount">3</div>
@@ -627,12 +633,14 @@
   <div id="hgTop" class="hgPanel">
     <div class="hgTitle">HANGAR</div>
     <select id="hgPresetSel" class="hgSel" title="Load one of the 10 sample planes"></select>
-    <button id="hgRandom" title="Load a random sample plane into the hangar. You can modify it before you fly.">&#127922; Random sample plane</button>
+    <button id="hgRandom" title="Load a random sample plane into the hangar. You can modify it before you fly.">&#127922; Random</button>
     <div class="hgSep"></div>
     <button id="hgMirror" class="hgBtn on">Mirror: ON</button>
     <button id="hgClear" class="hgBtn">Clear</button>
     <div class="hgSep"></div>
     <button id="hgTraining" class="hgBtn" title="Replay the flight training">Training</button>
+    <button id="hgSound" class="hgBtn" title="Sound on or off">Sound: ON</button>
+    <button id="hgGfx" class="hgBtn" title="Graphics. Auto: high, unless this device measured too slow (then low). Click to switch">Graphics: Auto</button>
     <button id="hgRemove" class="hgBtn touchOnly" title="Tap parts to remove them">Remove: OFF</button>
     <button id="hgFlip" class="hgBtn touchOnly" style="display:none" title="The game is upside down: turn it round">Flip</button>
     <button id="hgInstall" class="hgBtn touchOnly" style="display:none" title="Play full screen from your Home Screen">Full screen</button>
@@ -844,7 +852,7 @@
   background:rgba(180,30,30,.95);color:#fff;box-shadow:0 8px 30px rgba(0,0,0,.5);white-space:pre-wrap"></div>
 </div><!-- #app -->
 <script>
-  window.__EXPECT_BUILD = '2026-11-11b';
+  window.__EXPECT_BUILD = '2026-11-12a';
   // A cached old page (a home-screen app kept one for days, and its runs had no take-off tickets): ask the server
   // for the current page, and if it is a newer version, open that. ?b=... is a new address, so nothing cached is
   // reused; it reloads at most once per version and never goes back to an older one.
@@ -898,7 +906,7 @@
   (function () {
     var MODULES = ['main', 'config', 'terrain', 'plane', 'weapons', 'enemies', 'waves', 'hud', 'hangar',
                    'parts', 'spec', 'partMesh', 'struts', 'pick', 'blueprint', 'save', 'powerups', 'tutorial', 'leaderboard', 'weather', 'maps', 'touch',
-                   'net', 'coop', 'lobby', 'view', 'versus', 'share', 'ladder', 'autopilot', 'planetest', 'duel', 'rand'];
+                   'net', 'coop', 'lobby', 'view', 'versus', 'share', 'ladder', 'autopilot', 'planetest', 'duel', 'rand', 'quality', 'sound', 'effects', 'sky'];
     var imports = { three: 'https://unpkg.com/three@0.169.0/build/three.module.js' };
     MODULES.forEach(function (m) {
       imports['./js/' + m + '.js'] = './js/' + m + '.js?v=' + window.__EXPECT_BUILD;

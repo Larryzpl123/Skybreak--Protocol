@@ -144,6 +144,17 @@ that), and **Recenter** makes the way you hold it now "level". In the hangar, ta
 **The ground is fatal.** Trees aren't: you'll plough through them, but they cost hull and slow you down.
 Watch for the **PULL UP** warning.
 
+### Sound and graphics
+
+- **Sound** is made in the browser (nothing to download): engine, cannon, missiles, explosions, hits, power-ups,
+  and a beep when a missile is homing on you in Versus. It starts with your first click or key press (browsers
+  require that). **Sound: ON/OFF** in the hangar's top bar and on the pause screen.
+- **Graphics: Auto / High / Low** in the hangar. High adds a gradient sky, clouds, the sun, smoke from explosions
+  and longer missile trails. Auto uses High, measures the frame rate a few seconds into a flight, and switches this
+  device to Low if it runs under 45 fps or stutters. The pause screen shows the frame rate and what Auto picked.
+- Explosions, muzzle flashes and warnings are kept modest on purpose: no bright flashes, and nothing blinks more
+  than twice a second (fast flashing can trigger photosensitive epilepsy).
+
 ### Maps and weather
 
 Six kinds of terrain, each generated fresh from a seed: **Forest**, **Desert** (dunes), **Snow Peaks** (tall and steep),
@@ -295,6 +306,11 @@ js/struts.js      auto-generated struts, so parts never float
 js/partMesh.js    turns a blueprint into a 3D model
 js/plane.js       flight model
 js/weapons.js     cannon, missiles, enemy fire
+js/effects.js     explosions, missile trails, muzzle flashes
+js/sound.js       all sound (Web Audio, generated in the browser)
+js/sky.js         gradient sky, clouds and sun (high graphics)
+js/quality.js     graphics setting and the frame-rate check
+js/rand.js        the simulation's random source (fixed for the AI Test)
 js/enemies.js     all enemy types and the UFO boss
 js/waves.js       waves and drops
 js/terrain.js     the six terrain types (seeded heightmaps, city blocks), water and trees

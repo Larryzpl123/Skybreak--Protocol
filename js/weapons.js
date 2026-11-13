@@ -140,6 +140,7 @@ export class Weapons {
         this.shotsFired++;
       }
     }
+    if (this.onFire) this.onFire(plane, mounts);         // the game: sound and muzzle flashes (none in the AI Test)
   }
 
   // co-op host: a teammate's bullet, simulated here so hits are decided in one place
@@ -188,6 +189,7 @@ export class Weapons {
       mesh, pos: p, dir: fwd.clone(), life: CFG.missile.life,
       dmg: CFG.missile.damage * this.missileMul, target,
     });
+    if (this.onLaunch) this.onLaunch(p, plane);
     return true;
   }
 

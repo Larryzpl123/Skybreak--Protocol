@@ -88,7 +88,7 @@ export class HUD {
       };
       const danger = clearance < 55 || Math.min(ahead(0.6), ahead(1.2), ahead(1.8), ahead(2.5)) < 45;
       warn.style.display = danger ? 'block' : 'none';
-      if (danger) warn.style.opacity = (Math.floor(performance.now() / 160) % 2) ? '1' : '0.25';
+      if (danger) warn.style.opacity = (Math.floor(performance.now() / 250) % 2) ? '1' : '0.25';   // 2 a second (under 3: photosensitivity)
     }
 
     this.drawMarkers(enemies, camera, target);

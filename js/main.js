@@ -22,6 +22,10 @@ import { ENEMY_INFO } from './enemies.js';
 import { Training, HangarTips } from './tutorial.js';
 import { Leaderboard } from './leaderboard.js';
 import { partsToText } from './share.js';
+import { Quality } from './quality.js';
+import { Sound } from './sound.js';
+import { Effects } from './effects.js';
+import { Sky } from './sky.js';
 import { TouchControls, isTouch } from './touch.js';
 import { Net } from './net.js';
 import { Coop } from './coop.js';
@@ -54,6 +58,10 @@ scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff2d8, 1.15);
 sun.position.set(600, 1200, 400);
 scene.add(sun);
+// high graphics quality: gradient sky, clouds and the sun (sky.js); low keeps the plain sky colour
+const skyDome = new Sky(scene, sun);
+skyDome.setEnabled(Quality.high);
+Quality.onChange(() => skyDome.setEnabled(Quality.high));
 
 // mix two 0xRRGGBB colors (t = 0 -> a, 1 -> b)
 const mixHex = (a, b, t) => {
@@ -72,6 +80,7 @@ function applyMap(map) {
   const sky = W.tint != null ? mixHex(B.sky, W.tint, 0.7) : B.sky;
   scene.background = new THREE.Color(sky);
   scene.fog = new THREE.Fog(sky, W.fog[0], W.fog[1]);
+  skyDome.setLook(sky, map.weather);
   const dim = 1 - (W.dark || 0);
   hemi.intensity = 0.95 * dim;
   sun.intensity = 1.15 * dim;
@@ -86,6 +95,20 @@ const weapons = new Weapons(scene);
 const waves = new Waves(scene);
 const drops = new Drops(scene);
 const fx = new PowerFX(scene);
+const effects = new Effects(scene);            // explosions, missile trails, muzzle flashes (effects.js)
+weapons.onFire = (p, mounts) => { Sound.shot(mounts.length); effects.muzzle(p, mounts); };
+weapons.onLaunch = () => Sound.launch();
+// an explosion seen and heard from the local plane: louder and with a little shake when close
+function boomAt(pos, size = 1, vel = null) {
+  effects.boom(pos, size, vel);
+  const d = pos.distanceTo(camera.position);
+  const toward = pos.clone().sub(camera.position);
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+  Sound.boom(size, d, d > 1 ? toward.dot(right) / d : 0);
+  if (d < 150 * size) shakeT = Math.max(shakeT, 0.06 * size);
+}
+// browsers allow sound only after a click, tap or key press
+for (const ev of ['pointerdown', 'keydown', 'touchend']) addEventListener(ev, () => Sound.unlock(), { capture: true, passive: true });
 const hud = new HUD();
 
 let score = 0;
@@ -172,6 +195,8 @@ function readInput() {
 }
 
 /* ================= Event callbacks ================= */
+// a power-up picked up: its effect, plus the sound
+const pickUp = (type, ctx) => { Sound.pickup(); return applyPowerup(type, ctx); };
 function onEnemyHit(e, dmg, at) {
   const died = e.hurt(dmg);
 
@@ -185,6 +210,7 @@ function onEnemyHit(e, dmg, at) {
     hud.message('BOSS AT 50% · SUPPLY DROP', 2.2);
   }
 
+  if (died) boomAt(e.pos, e.type === 'boss' ? 3 : e.type === 'bomber' ? 2 : 1, e.vel);
   if (died && !training) {
     score += e.score;
     kills++;
@@ -197,6 +223,7 @@ function onPlayerHit(dmg, cause = 'ENEMY FIRE', src = null) {
   if (coop.active && coop.versus) coop.vs.onHit(src);     // versus: remember who hit me (kill credit)
   const before = plane.hp;
   if (plane.hurt(dmg, cause)) {
+    Sound.hurt();
     const dealt = before - plane.hp;
     if (cause === 'COLLISION') diag.ram += dealt;
     else if (cause === 'DRONE') diag.drone += dealt;
@@ -571,7 +598,7 @@ function enterHangar() {
   document.getElementById('over').style.display = 'none';
   document.getElementById('hud').style.display = 'none';
   if (touch) touch.show(false);
-  weapons.clear(); drops.clear(); fx.clear(); waves.reset();   // the battlefield is clean when you come back
+  weapons.clear(); drops.clear(); fx.clear(); effects.clear(); waves.reset();   // the battlefield is clean when you come back
   hangar.enter();
   if (!Save.data.hangarTipsDone && !tips) {
     tips = new HangarTips(() => { tips = null; Save.setFlag('hangarTipsDone'); afterTips(); }, TOUCH);
@@ -625,6 +652,8 @@ function showPauseMenu() {
   $('pauseInfo').textContent = ladder.active ? `AI Ladder · level ${ladder.level} · you ${ladder.me} - ${ladder.ai} AI`
     : real ? `Wave ${waves.wave} · score ${score}` + (flightMap.daily && !unranked ? " · today's map (ranked)" : '')
     : testFlight ? 'Test flight' : 'Training';
+  $('pausePerf').textContent = Quality.readout();
+  $('pauseSound').textContent = `Sound: ${Sound.on() ? 'ON' : 'OFF'}`;
   $('pauseNote').textContent = ladder.active ? 'Restart starts this level over. End run goes back to the hangar (your ladder progress is kept).'
     : real ? 'Restart and End run need two clicks. Both count like being shot down: this run\'s score is saved.' : '';
 }
@@ -764,12 +793,12 @@ function updateLadder(dt) {
   if (ev === 'round') newLadderRound();
   fx.update(dt, plane);
   Weather.update(dt, { plane, camera, enemies: foes, onPlayerHit, onEnemyHit: ladderHit });
-  if (shakeT > 0) shakeT -= dt;
   diag.t += dt;
 }
 function ladderHit(e, dmg) {
   if (e !== duelist || !e.hurt(dmg)) return;
   e.mesh.visible = false;
+  boomAt(e.pos, 2, e.vel);
   hud.message('AI SHOT DOWN', 1.8);
   ladderPoint(ladder.aiDown(), 'me');
 }
@@ -913,6 +942,7 @@ function update(dt) {
     if (plane.hp > before) hud.message(`WAVE CLEAR  +${Math.round(plane.hp - before)} HP`, 1.6);
   }
   if (ev === 'wave-start') {
+    Sound.wave();
     // the first time a new enemy type shows up in a run, say what it is and how to deal with it
     const intro = waves.newTypes.map(t => ENEMY_INFO[t]).filter(Boolean);
     let text, sub = '';
@@ -962,7 +992,7 @@ function update(dt) {
 
   // drop pickup
   for (const type of drops.update(dt, plane)) {
-    const txt = applyPowerup(type, { plane, weapons, enemies: waves.enemies, onEnemyHit, fx });
+    const txt = pickUp(type, { plane, weapons, enemies: waves.enemies, onEnemyHit, fx });
     hud.message(txt, 1.6);
     if (type === 'emp' && coop.active) net.broadcast({ t: 'emp', p: [plane.pos.x, plane.pos.y, plane.pos.z] }, true);
   }
@@ -976,7 +1006,6 @@ function update(dt) {
     if (coop.checkTeamOver()) return;
   }
 
-  if (shakeT > 0) shakeT -= dt;
   diag.t += dt;
 }
 
@@ -1002,14 +1031,13 @@ function updateVersus(dt) {
   // my bullets vanish when they reach another plane here too, but only that player's game counts the hit
   weapons.update(dt, { enemies: foes, plane, onEnemyHit: (e, dmg) => coop.vs.landed(e, dmg), onPlayerHit });
   if (coop.isHost) {
-    for (const type of drops.update(dt, plane)) hud.message(applyPowerup(type, { plane, weapons, enemies: [], onEnemyHit: () => {}, fx }), 1.6);
+    for (const type of drops.update(dt, plane)) hud.message(pickUp(type, { plane, weapons, enemies: [], onEnemyHit: () => {}, fx }), 1.6);
     coop.hostTick(dt);
   } else {
     coop.guestTick(dt, weapons.bullets.length);
   }
   fx.update(dt, plane);
   Weather.update(dt, { plane, camera, enemies: [], onPlayerHit, onEnemyHit: () => {}, targets: coop.isHost ? [plane, ...coop.teammates()] : null });
-  if (shakeT > 0) shakeT -= dt;
   diag.t += dt;
 }
 
@@ -1097,13 +1125,12 @@ function updateGuest(dt) {
   weapons.update(dt, { enemies, plane, onEnemyHit: () => {}, onPlayerHit });
   fx.update(dt, plane);
   Weather.update(dt, { plane, camera, enemies, onPlayerHit, onEnemyHit: () => {} });
-  if (shakeT > 0) shakeT -= dt;
   diag.t += dt;
 }
 
 function render(dt) {
   const C = CFG.camera;
-  flashEl.style.opacity = String(Weather.flash * 0.75);   // lightning flash
+  flashEl.style.opacity = String(Weather.flash * 0.3);    // lightning flash (0.75 before: a whole-screen bright flash is a photosensitivity risk)
   // co-op: while I am down the camera follows a teammate who is still flying
   const subj = (!plane.alive && coop.active && coop.spectateTarget()) || plane;
   const fwd = subj.forward();
@@ -1121,10 +1148,13 @@ function render(dt) {
   camera.up.copy(camUp);
   camera.lookAt(look);
 
+  // (counted down here where it is used, not in update(): update stops at game over, and a shake started by the
+  // hit that ended the run used to stay on for good, the plane jittering behind the results)
   if (shakeT > 0) {
     const s = shakeT * 6;
     camera.position.x += (Math.random() - 0.5) * s;
     camera.position.y += (Math.random() - 0.5) * s;
+    shakeT = Math.max(0, shakeT - dt);
   }
 
   // sense of speed: faster = wider field of view
@@ -1132,15 +1162,36 @@ function render(dt) {
   camera.fov += ((C.fov + t * C.fovSpeedGain) - camera.fov) * Math.min(1, 4 * dt);
   camera.updateProjectionMatrix();
 
+  skyDome.update(dt, camera);
   renderer.render(scene, camera);
 }
 
 let last = performance.now();
+// Planes going down, mine or other players' (co-op / versus): they explode where they fell. Mine also disappears, so
+// it does not sit behind the results screen (it used to sit there shaking, see the camera shake in render()).
+let meAlive = false;
+const othersAlive = new Map();
+function watchDowns() {
+  if (meAlive && !plane.alive && plane.deathCause !== 'ENDED') {
+    boomAt(plane.pos, 1.5, plane.forward().multiplyScalar(plane.speed));   // (1.5: the camera is close)
+    plane.mesh.visible = false;
+  }
+  meAlive = plane.alive;
+  if (!coop.active) { othersAlive.clear(); return; }
+  for (const r of coop.teammates()) {
+    const was = othersAlive.get(r);
+    if (was && !r.alive && r.pos) boomAt(r.pos, 2);
+    othersAlive.set(r, !!r.alive);
+  }
+}
+
 function loop(now) {
   View.check();                          // the page size changed without a resize event (iOS): fit the game again
+  if (mode === 'flight' && !paused && document.visibilityState !== 'hidden') Quality.sample(now - last);   // (quality.js)
   const dt = Math.min((now - last) / 1000, 0.05);   // clamp, so switching tabs doesn't cause one huge frame step
   last = now;
   if (mode === 'hangar') {
+    Sound.engine(false);
     hangar.update(dt);
     // a window (leaderboard, stats, ...) covers the plane: stop drawing it, so scrolling the window stays smooth on
     // phones (the screen keeps the last picture)
@@ -1155,12 +1206,21 @@ function loop(now) {
     } else update(dt);
     const guest = coop.active && coop.isGuest, vs = coop.active && coop.versus;
     const foes = vs ? coop.teammates().filter(r => r.alive) : null;
+    // versus: other players' missiles homing on me (not the AI Ladder's: its difficulty was tuned without a warning)
+    const incoming = vs ? weapons.pvpMissiles.filter(m => m.mine && m.target === plane && m.owner !== 'ai') : debugIncoming;
+    if (!paused) {
+      effects.update(dt, weapons);
+      watchDowns();
+      if (incoming.length) Sound.warn(Math.min(...incoming.map(m => m.pos.distanceTo(plane.pos))));
+    }
+    const P = plane.P || {};
+    Sound.engine(!paused && plane.alive && !gameOver, plane.speed,
+      P.speedMax > P.speedMin ? (plane.speed - P.speedMin) / (P.speedMax - P.speedMin) * 2 - 1 : 0, P.jetShare || 0);
     hud.update(dt, {
       plane, enemies: vs ? foes : coop.active ? coop.enemyList() : waves.enemies, camera, target: missileTarget || target, leadPoint,
       score: vs ? (coop.vs.row(coop.vs.me) || { kills: 0 }).kills : guest ? coop.score : score, best, wave: vs || ladder.active ? '-' : guest ? coop.wave : waves.wave,
       drops: coop.active ? coop.dropList() : drops.list, mates: coop.active && !vs ? coop.teammates() : [], foes: foes || [],
-      // versus: other players' missiles homing on me (not the AI Ladder's: its difficulty was tuned without a warning)
-      incoming: vs ? weapons.pvpMissiles.filter(m => m.mine && m.target === plane && m.owner !== 'ai') : debugIncoming,
+      incoming,
     });
     updateCoopDown();
     updateVsBoard();
@@ -1174,7 +1234,8 @@ hangar.prepareTest = () => applyMap(TRAINING_MAP);   // the AI Test and Design D
 
 const net = new Net();
 const coop = new Coop({
-  scene, plane, weapons, waves, drops, fx, hud, net, Weather, applyPowerup, onEnemyHit, onPlayerHit,
+  scene, plane, weapons, waves, drops, fx, hud, net, Weather, onEnemyHit, onPlayerHit,
+  applyPowerup: (t, c) => (c.plane === plane ? pickUp(t, c) : applyPowerup(t, c)),   // (my own pickups make the sound)
   launch: coopLaunch, leave: () => leaveCoop(), toast: coopToast, score: () => score, respawn: coopRespawn,
 });
 coop.onOver = coopOver;
@@ -1215,7 +1276,7 @@ if (DEBUG) window.__sb = {
   View,
   coop, net, lobby, ladder, startLadder, ladderHit, openLadder,
   get glInfo() { return renderer.info; },      // GPU memory: geometries and textures alive (leak checks)
-  debugIncoming, camera,
+  debugIncoming, camera, Quality, Sound, effects,
   get duelist() { return duelist; },
   forceDeath() { plane.hp = 0; plane.alive = false; endGame(); },
   hit: (d, cause) => onPlayerHit(d, cause),
@@ -1240,6 +1301,7 @@ document.getElementById('hgFlip').onclick = () => { if (touch) touch.flipScreen(
 started = true;
 onViewChange();
 document.getElementById('pauseResume').onclick = () => resumeGame();
+document.getElementById('pauseSound').onclick = () => { Sound.toggle(); document.getElementById('pauseSound').textContent = `Sound: ${Sound.on() ? 'ON' : 'OFF'}`; document.getElementById('hgSound').textContent = `Sound: ${Sound.on() ? 'ON' : 'OFF'}`; };
 document.getElementById('pauseRestart').onclick = () => confirmClick('pauseRestart', pauseRestart);
 document.getElementById('pauseEnd').onclick = () => confirmClick('pauseEnd', pauseEnd);
 document.getElementById('pauseHangar').onclick = () => { hidePause(); if (training) endTraining(); else enterHangar(); };

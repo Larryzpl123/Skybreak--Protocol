@@ -103,7 +103,9 @@ export class Plane {
   syncMesh() {
     this.mesh.position.copy(this.pos);
     this.mesh.quaternion.copy(this.quat);
-    this.mesh.visible = this.alive && !(this.invuln > 0 && Math.floor(this.invuln * 12) % 2 === 0);
+    // blinking while invulnerable: 2 times a second (it was 6; flashing faster than 3 times a second can trigger
+    // photosensitive epilepsy)
+    this.mesh.visible = this.alive && !(this.invuln > 0 && Math.floor(this.invuln * 4) % 2 === 0);
   }
 
   update(dt, input) {
