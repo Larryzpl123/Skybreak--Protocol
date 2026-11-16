@@ -30,7 +30,7 @@ then open <http://localhost:8765>.
 ## 🛠️ The Hangar
 
 After training, the game opens in the hangar. Build a plane, or start from one of **10 sample planes**, then hit **SORTIE**.
-Feeling lucky? **Random sample plane** picks one of the 10 at random and loads it into the hangar, so you can fly it as is or modify it first.
+Feeling lucky? **Random** picks one of the 10 sample planes at random and loads it into the hangar, so you can fly it as is or modify it first.
 Press **SORTIE (PLAY)** to take off.
 
 | Input | Action |
@@ -261,7 +261,7 @@ In the hangar, under FLIGHT DATA:
 
 - **AI test**: a computer pilot flies the plane you are building, with its real handling, guns, missiles and hull.
   It flies the normal waves, and duels against each of the 10 sample planes (the same pilot flying both sides, versus
-  rules). Two grades come out, from F to SSS: **Waves** and **Duels**. The stock fighter is a C on both. It takes a few
+  rules). Two grades come out, from F to SSS: **Waves** and **Duels**. The stock fighter gets about a B and a C. It takes a few
   seconds, always gives the same plane the same grades, and is local only: nothing is sent and nothing is ranked.
 - **Design duel**: pick any two planes (this one, your saved planes, the sample planes, or a plane code) and they
   fight 20 duels, both flown by the same computer pilot, so the designs decide.
