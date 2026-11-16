@@ -198,6 +198,20 @@ function buildCity(scene) {
   return list.length;
 }
 
+// Islands: near the shore the drawn ground is made 4 times steeper around the sea surface (y = 0.5), easing back to the
+// real height 12 m above or below it. A gentle beach met the flat water almost edge on, and the depth test could not
+// tell which was in front: the shoreline shimmered when turning (reported twice). Steepening around the water line
+// keeps the coast where it was (a flat step there made it follow the 28 m grid, jagged), and the steeper angle ends
+// the shimmer. Only the picture: what you can crash into is still heightAt / groundAt (at most 4.5 m from this).
+const SEA = 0.5, STEEP = 4, NEAR = 1.5, FAR = 12;
+function shoreStep(h) {
+  if (MAP.biome !== 'islands') return h;
+  const d = h - SEA, a = Math.abs(d);
+  if (a >= FAR) return h;
+  const out = a <= NEAR ? a * STEEP : NEAR * STEEP + (a - NEAR) * (FAR - NEAR * STEEP) / (FAR - NEAR);
+  return SEA + Math.sign(d) * out;
+}
+
 export function buildTerrain(scene) {
   const { size, segments } = CFG.world;
   const B = BIOMES[MAP.biome];
@@ -212,7 +226,7 @@ export function buildTerrain(scene) {
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i), z = pos.getZ(i);
     const h = groundAt(x, z);
-    pos.setY(i, h);
+    pos.setY(i, shoreStep(h));
     vertexColor(c, h, B, cols);
     colors[i * 3] = c.r; colors[i * 3 + 1] = c.g; colors[i * 3 + 2] = c.b;
   }
