@@ -328,7 +328,16 @@ js/config.js      every tunable number in one place
 
 No dependencies besides [three.js](https://threejs.org), loaded from a CDN. No build step.
 
-*Inspired by UFO Attack, an earlier 2D shooter by the same author. The first boss is that UFO.*
+## Credits
+
+- **[three.js](https://threejs.org)** (MIT license) draws the 3D.
+- **Building from parts** was inspired by *Astracraft* (重装上阵).
+- **The idea of the UFO boss and the power-ups** comes from *UFO Attack*, a 2D shooter I made earlier in Python (pygame)
+  and as a web page, following the design of *Project 1: UFO Attack!* (GML version), a beginner GameMaker tutorial from
+  [Ludo Lodge](https://www.ludolodge.com) (@rlangewi), revised by Shena Wang, with art by Mary Langewisch
+  ([@MaryFGI](https://fragilegloryimpressions.com/)).
+- No code or art from those games or the tutorial is used here: this game is written from scratch in JavaScript, and
+  everything on screen is generated low-poly geometry.
 
 ---
 

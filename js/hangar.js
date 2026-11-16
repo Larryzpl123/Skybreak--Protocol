@@ -69,7 +69,7 @@ const pilotName = r => `${r.callsign} #${r.id}`;
 const pilot = r => `${esc(r.callsign)} <span class="rsP">#${r.id}</span>` +
   (r.locked === 0 ? '<span class="rsU" title="This pilot can still change their callsign">not locked</span>' : '');
 // Copy: load the plane that run was flown in (the server keeps its parts, never a name)
-const copyBtn = r => (r.hp ? ` <button class="rsCopy" data-id="${Number(r.id)}" data-day="${esc(r.day || '')}" data-who="${esc(pilotName(r))}" title="Load this plane into your hangar">Copy</button>` : '');
+const copyBtn = r => (r.hp ? ` <button class="rsCopy" data-id="${Number(r.id)}" data-day="${esc(r.day || '')}" data-plane="${r.src === 'plane' ? esc(r.plane) : ''}" data-who="${esc(pilotName(r))}" title="Load this plane into your hangar">Copy</button>` : '');
 const boardRow = (r, mine) => `<tr${mine ? ' class="rsMe"' : ''}><td class="rsN">${r.rank}</td><td>${pilot(r)}</td>
   <td class="rsNum">${r.score}</td><td class="rsNum">${r.wave}</td><td class="rsPlane">${esc(r.plane)}${copyBtn(r)}</td>
   <td class="rsNum">${fmtTime(r.time)}</td><td>${r.day ? fmtDay(r.day) : fmtDate(r.at)}</td></tr>`;
@@ -748,9 +748,9 @@ export class Hangar {
     return res;
   }
   // load the plane a board run was flown in, named after its pilot (callsigns come from the server, never typed)
-  async copyFlown(id, day, who, btn = null) {
+  async copyFlown(id, day, who, btn = null, plane = '') {
     if (btn) { btn.disabled = true; btn.textContent = '...'; }
-    const r = await Leaderboard.flownPlane(id, day);
+    const r = await Leaderboard.flownPlane(id, day, plane);
     if (r.error || typeof r.parts !== 'string') {
       if (btn) { btn.disabled = false; btn.textContent = 'Copy'; }
       this.toast(r.error === 'offline' ? 'Leaderboard offline: could not copy the plane.' : 'That plane is not on file any more.', true);
@@ -942,7 +942,7 @@ export class Hangar {
     // a Copy button on a board row (all time, today, week, month, year)
     this.$('hgBoardView').onclick = e => {
       const b = e.target && e.target.closest ? e.target.closest('.rsCopy') : null;
-      if (b) this.copyFlown(Number(b.dataset.id), b.dataset.day || '', b.dataset.who || 'Pilot', b);
+      if (b) this.copyFlown(Number(b.dataset.id), b.dataset.day || '', b.dataset.who || 'Pilot', b, b.dataset.plane || '');
     };
     this.$('hgAiGrades').onclick = () => { this.aiNoteOpen = !this.aiNoteOpen; this.refreshAiTest(); };
     this.$('hgMapSel').onchange = () => { this.mapChoice = this.$('hgMapSel').value; this.refreshMapSel(); };

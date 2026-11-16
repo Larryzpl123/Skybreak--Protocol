@@ -67,9 +67,10 @@ export const Leaderboard = {
   },
 
   // the plane a board run was flown in -> { parts } or { error }. day: that day's run, or '' for the all-time best
-  async flownPlane(id, day = '') {
+  // plane: a per-plane best (the By plane board) instead of a day's run
+  async flownPlane(id, day = '', plane = '') {
     if (!this.enabled()) return { error: 'disabled' };
-    return this.call(`/plane/flown?id=${encodeURIComponent(id)}${day ? `&day=${encodeURIComponent(day)}` : ''}`);
+    return this.call(`/plane/flown?id=${encodeURIComponent(id)}${day ? `&day=${encodeURIComponent(day)}` : ''}${plane ? `&plane=${encodeURIComponent(plane)}` : ''}`);
   },
 
   // Creative board: a run in a Creative plane (over the load budget or the build area) -> { rank, total, best, newBest }
