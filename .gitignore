@@ -1,4 +1,7 @@
 .DS_Store
+# iCloud conflict copies ("main 2.js", "icon-192 3.png"): never part of the game
+* [0-9].*
+* [0-9]
 # personal progress: best scores and your own planes
 save.txt
 save.txt.tmp
